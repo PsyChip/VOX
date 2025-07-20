@@ -6,6 +6,9 @@ A conversational AI agent powered by ElevenLabs conversational agents, featuring
 - Alec Fritsch (@flokzybtw)
 - Mehmet Ali Dolgun (@psychip_)
 
+## Live Demo
+[vox.psychip.net](https://vox.psychip.net)
+
 ## Project Overview
 
 This application demonstrates an advanced conversational AI interface with:
