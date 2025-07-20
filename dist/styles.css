@@ -1,0 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Jost:wght@500&display=swap');
+
+html,
+body {
+  font-family: 'Jost', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+  background: linear-gradient(45deg,
+      #1c1c1c,
+      #313131,
+      #4a4a4a);
+  background-size: 500% 500%;
+  background-repeat: no-repeat;
+  height: 100%;
+  animation: gradientFlow 10s ease infinite;
+  overflow: hidden;
+  margin: 0px;
+  padding: 0px;
+  background: #000;
+}
+
+* {
+  font-family: "Jost", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+
+div#subtitle {
+  position: absolute;
+  background: none;
+  font-size: 24px;
+  text-align: center;
+  width: 400px;
+  bottom: 10%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  border-radius: 4px;
+}
+
+div#listPanel {
+  position: fixed;
+  top: 0;
+  right: -350px;
+  width: 350px;
+  height: 100vh;
+  background: rgba(20, 20, 20, 0.9);
+  backdrop-filter: blur(10px);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  transition: right 0.3s ease-in-out;
+  z-index: 1000;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(0, 0, 0, 0.1);
+}
+
+div#listPanel::-webkit-scrollbar {
+  width: 6px;
+}
+
+div#listPanel::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+div#listPanel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+div#listPanel.show {
+  right: 0;
+}
+
+div#listContent {
+  padding: 20px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+div#listContent ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+div#listContent li {
+  margin-bottom: 8px;
+  padding: 4px 0;
+}
+
+@keyframes gradientFlow {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
