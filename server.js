@@ -68,8 +68,8 @@ String.prototype.render = function (v, prefix) {
 };
 
 function geoip(ip) {
-    if (ip === "::1" || ip === "127.0.0.1") {
-        console.log("Localhost IP detected, returning mock data.");
+    if (ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1") {
+        console.log("Localhost IP detected, returning sample ip");
         ip = "217.9.109.94";
         /*
         return {
@@ -142,17 +142,22 @@ const microtime = () => new Date().getTime();
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const trustProxy = true;
+app.set('trust proxy', trustProxy);
+
 app.use("/static", express.static(path.join(__dirname, "./dist")));
 app.get("/api/signed-url/:dayPhase?", async (req, res) => {
     console.log("-- initializing system prompt..");
 
     req.timestamp = microtime();
-    req.ip = (req.headers["x-requested-for"] ||
-        req.headers["x-forwarded-for"] ||
+    req.ip = (req.headers["x-forwarded-for"] ||
+        req.headers["x-real-ip"] ||
         req.headers["x-client-ip"] ||
         req.connection.remoteAddress ||
         req.socket?.remoteAddress ||
         req.connection.socket?.remoteAddress).toString().split(",")[0].replace("::ffff:", "").trim();
+    console.log("-- request from IP:", req.ip);
 
     var geo = geoip(req.ip);
     var today = getDateDetails();
