@@ -130,18 +130,16 @@ function showSubtitle() {
 }
 
 function detectPerformance() {
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const hasLowMemory = navigator.deviceMemory && navigator.deviceMemory < 8;
-
-    if (isMobile || hasLowMemory) {
+    if (hasLowMemory) {
         lowEnd = true;
         console.log("Low performance mode enabled");
     }
 
-    if (window.location.search.includes('lowperf=true')) {
+    if (window.location.search.includes('lowend=true')) {
         lowEnd = true;
     }
-    if (window.location.search.includes('lowperf=false')) {
+    if (window.location.search.includes('lowend=false')) {
         lowEnd = false;
     }
 }
@@ -465,7 +463,7 @@ async function startConversation() {
 
         if (lowEnd === true) {
             agentAnalyser.fftSize = 64;
-            agentAnalyser.smoothingTimeConstant = 0.25;
+            agentAnalyser.smoothingTimeConstant = 0.35;
         } else {
             agentAnalyser.fftSize = 128;
             agentAnalyser.smoothingTimeConstant = 0.45;
@@ -497,8 +495,8 @@ async function startConversation() {
     detectPerformance();
     if (lowEnd === true) {
         config.glow = 0;
-        config.multiplier = 15;
-        config.coef = 0.07;
+        config.multiplier = 10;
+        config.coef = 0.05;
     }
 
     const constraints = { audio: true };
