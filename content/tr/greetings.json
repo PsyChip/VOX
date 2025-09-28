@@ -1,0 +1,50 @@
+{
+    "morning": [
+        "Günaydın, kolay gelsin. Nereden başlıyoruz?",
+        "Sabahınız hayırlı olsun, ne lazım?",
+        "Günaydın, hadi bakalım başlayalım mı?",
+        "Buyurun, ilk iş nedir?",
+        "Günaydın, her şey yolunda mı?",
+        "Selamlar, gününüz bereketli olsun. Ne yapıyoruz?",
+        "Günaydın, hazırsanız ben de hazırım.",
+        "Sabah şerifler hayır olsun. İlk adım ne?",
+        "Merhaba, güne nereden giriş yapıyoruz?",
+        "Günaydın, size nasıl destek olayım?"
+    ],
+    "day": [
+        "Merhaba, kolay gelsin. Ne yapıyoruz?",
+        "Tamamdır, adresi verin yeter.",
+        "Buyurun, nereye lazım?",
+        "Merhaba, sıradaki iş nedir?",
+        "Selam, hazır bekliyorum.",
+        "Kolay gelsin, ben hazırım. Ne yapıyoruz?",
+        "Merhaba, nereden başlayalım?",
+        "Peki, hangi adrese bakıyoruz?",
+        "Buyurun, komut sizde.",
+        "Merhaba, size nasıl yardımcı olayım?"
+    ],
+    "evening": [
+        "İyi akşamlar, kolay gelsin. Ne lazım?",
+        "Hazırım, hadi yönlendireyim.",
+        "Akşam oldu, sıradaki adım ne?",
+        "Buyurun, devam mı ediyoruz?",
+        "İyi akşamlar, gün nasıl geçti?",
+        "Selam, akşam işleri için buradayım.",
+        "Kolay gelsin, kapatmadan önce ne var?",
+        "İyi akşamlar, hangi iş kaldı?",
+        "Buyurun, akşam için plan ne?",
+        "Akşam raporu çıkarayım mı?"
+    ],
+    "night": [
+        "İyi geceler, kolay gelsin. Ne yapıyoruz?",
+        "Gece de buradayım, nereye gidiyoruz?",
+        "Tamamdır, adres var mı?",
+        "İyi geceler, halledelim.",
+        "Selam, hâlâ çalışıyor muyuz?",
+        "Gece mesaisi mi var? Ben hazırım.",
+        "Buyurun, hangi işle ilgilenelim?",
+        "İyi geceler, dinlenmeden önce bir şey var mı?",
+        "Geç saat, ama ben buradayım.",
+        "Tamamdır, geceyi nasıl kapatıyoruz?"
+    ]
+}

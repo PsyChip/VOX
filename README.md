@@ -1,6 +1,6 @@
 # Conversational Voice Agent with Tool Support
 
-A conversational AI agent powered by ElevenLabs conversational agents, featuring real-time audio visualization, geographic location awareness, and integrated tool capabilities including weather, directions, and search functionality.
+A conversational AI agent powered by ElevenLabs, featuring real-time audio visualization, geographic location awareness, and integrated tool capabilities including weather, directions, and search functionality.
 
 ## Team Members
 - Alec Fritsch (@flokzybtw)

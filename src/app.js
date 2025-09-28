@@ -1,6 +1,6 @@
 "use strict";
 
-import { Conversation } from '@11labs/client';
+import { Conversation } from '@elevenlabs/client';
 let conversation = null;
 
 var _leave = new sound("/static/VoiceLeave.ogg");
@@ -476,13 +476,22 @@ async function startConversation() {
     } catch (error) {
         connected = false;
         console.error('Error starting conversation:', error);
-        alert('Failed to start conversation. Please try again.');
+        let msg = '[unable to connect to voice service]';
+        if (error && (error.reason || error.message)) {
+            const r = (error.reason || error.message).toString().toLowerCase();
+            if (r.includes('websocket') || r.includes('ws')) {
+                msg = '[unable to connect to websocket service]';
+            }
+        }
+        subtitle.innerHTML = msg;
+        showDisconnectionBox();
     }
 }
 
 (function () {
     if (!AudioContext) {
         console.log("No Audio");
+        subtitle.innerHTML = "[audio not supported by browser]";
         return;
     }
     detectPerformance();
@@ -493,10 +502,21 @@ async function startConversation() {
     }
 
     const constraints = { audio: true };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        connected = false;
+        subtitle.innerHTML = "[media devices API unavailable]";
+        return;
+    }
     navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
         const track = stream.getAudioTracks()[0];
         const deviceId = track.getSettings().deviceId;
         return navigator.mediaDevices.enumerateDevices().then(devices => {
+            const audioInputs = devices.filter(d => d.kind === 'audioinput');
+            if (!audioInputs || audioInputs.length === 0) {
+                connected = false;
+                subtitle.innerHTML = "[no input audio source detected]";
+                return;
+            }
             const activeMic = devices.find(device => device.deviceId === deviceId);
             micName = (activeMic ? activeMic.label : "Unknown").toString();
             if (micName !== "" && isStereoMix(micName) === true) {
@@ -510,7 +530,18 @@ async function startConversation() {
     }).catch(function (e) {
         console.log(e);
         connected = false;
-        subtitle.innerHTML = "[error occured]";
+        let msg = "[cannot access microphone]";
+        if (e && (e.name || e.code)) {
+            const name = e.name || e.code;
+            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') msg = "[microphone permission denied]";
+            else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') msg = "[no input audio source detected]";
+            else if (name === 'NotReadableError') msg = "[microphone is in use or unavailable]";
+            else if (name === 'OverconstrainedError') msg = "[audio constraints not satisfied]";
+            else if (name === 'AbortError') msg = "[audio capture aborted]";
+            else if (name === 'SecurityError') msg = "[secure context required for microphone]";
+            else if (name === 'TypeError') msg = "[invalid audio constraints]";
+        }
+        subtitle.innerHTML = msg;
     });
 })();
 

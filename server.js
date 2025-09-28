@@ -1,62 +1,13 @@
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const readline = require("readline");
 const path = require("path");
 const Reader = require('@maxmind/geoip2-node').Reader;
 const fs = require("fs");
 const mmcity = Reader.openBuffer(fs.readFileSync('./db/GeoLite2-City.mmdb'));
 const mmasn = Reader.openBuffer(fs.readFileSync('./db/GeoLite2-ASN.mmdb'));
-
-const greetings = {
-    "morning": [
-        "Good morning! I'm here and ready to help.",
-        "Morning! Let me know how I can assist you today.",
-        "Welcome back! Hope you had a restful night — what can I do for you this morning?",
-        "Good morning! Let’s make today a productive one.",
-        "Hello! It's a fresh new day — how can I support you?",
-        "Morning! I'm all set if you need anything.",
-        "Welcome! Ready to get started?",
-        "Good morning! Just say the word, and I’ll jump in.",
-        "Morning sunshine! I'm here whenever you need me.",
-        "Hello! Wishing you a great start to your day — how can I assist?"
-    ],
-    "day": [
-        "Hello! How can I assist you today?",
-        "Welcome! Hope your day is going well.",
-        "Hi there! Let me know if you need any help.",
-        "Back again? Great! What can I do for you today?",
-        "I'm here and ready whenever you are.",
-        "Welcome back! Let's make the most of the day.",
-        "Hey there! Need a hand with anything?",
-        "Happy to see you! How can I support you today?",
-        "Let me know how I can help move things forward.",
-        "Here to help — just tell me what you need."
-    ],
-    "evening": [
-        "Good evening! How can I assist you tonight?",
-        "Welcome back! Need anything before winding down?",
-        "Evening! I’m here if you need a hand.",
-        "Hope your day went well — let me know if you need help.",
-        "Good to see you! What can I do for you this evening?",
-        "Evening check-in — I’m ready when you are.",
-        "Welcome! I’m still here and ready to assist.",
-        "Relaxing now? Let me know if I can help with anything.",
-        "It's evening, but I'm still at your service.",
-        "Good evening! Let's wrap up your day smoothly."
-    ],
-    "night": [
-        "Good night! I'm here if you need anything before bed.",
-        "Late night? I’ve still got you covered.",
-        "Welcome! How can I help you this evening?",
-        "Winding down? I'm standing by if you need help.",
-        "Night owl mode — I’m still ready to assist.",
-        "Still working? I’m here to help.",
-        "Hello again! Need anything before you call it a night?",
-        "Good night! Let me know how I can support you.",
-        "Late, but I’m here — how can I help?",
-        "Even at night, I’m just a message away."
-    ]
-}
+const lang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
 
 
 String.prototype.render = function (v, prefix) {
@@ -71,19 +22,6 @@ function geoip(ip) {
     if (ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1") {
         console.log("Localhost IP detected, returning sample ip");
         ip = "217.9.109.94";
-        /*
-        return {
-            flag: "DE",
-            country: "Germany",
-            city: "Berlin",
-            lat: 52.500733971884245,
-            lon: 13.443645715045234,
-            asn: "AS15169",
-            org: "Google LLC",
-            vpn: false,
-            result: true
-        };
-*/
     }
 
     var geo;
@@ -119,11 +57,20 @@ function getDateDetails() {
     const month = now.getMonth() + 1; // Numeric month (0-11, so add 1)
     const year = now.getFullYear(); // Full year
 
-    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const monthNames = [
+    const lang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
+    const dayNames_en = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const monthNames_en = [
         "January", "February", "March", "April", "May", "June",
         "July", "August", "September", "October", "November", "December"
     ];
+    const dayNames_tr = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
+    const monthNames_tr = [
+        "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+        "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+    ];
+
+    const dayNames = lang === 'tr' ? dayNames_tr : dayNames_en;
+    const monthNames = lang === 'tr' ? monthNames_tr : monthNames_en;
 
     const dayName = dayNames[now.getDay()]; // Day of the week
     const monthName = monthNames[now.getMonth()]; // Month name
@@ -138,6 +85,103 @@ function getDateDetails() {
 }
 
 dotenv.config();
+
+// Validate required environment variables early
+const requiredEnvVars = ["XI_API_KEY", "AGENT_ID"];
+const missingEnv = requiredEnvVars.filter(
+    (k) => !process.env[k] || String(process.env[k]).trim() === ""
+);
+
+if (missingEnv.length > 0) {
+    const envPath = path.join(__dirname, ".env");
+
+    const isInteractivePlatform = ["darwin", "win32"].includes(process.platform);
+    const shouldPrompt = isInteractivePlatform && process.stdin.isTTY && !fs.existsSync(envPath);
+
+    if (shouldPrompt) {
+        // Interactive prompt for Mac/Windows when creating .env
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const ask = (q) => new Promise((resolve) => rl.question(q, (ans) => resolve(ans.trim())));
+
+        (async () => {
+            try {
+                console.log("No .env found. Let's set it up.");
+                console.log("Press Enter to accept defaults when shown in brackets.\n");
+
+                const xi = await ask("XI_API_KEY (required): ");
+                const agent = await ask("AGENT_ID (required): ");
+                let port = await ask("PORT [3000]: ");
+                if (!port) port = "3000";
+                let lang = await ask("AGENT_LANGUAGE [en] (supported: en, tr): ");
+                if (!lang) lang = "en";
+                lang = lang.toLowerCase();
+                if (!["en", "tr"].includes(lang)) {
+                    console.warn(`Unsupported AGENT_LANGUAGE '${lang}', defaulting to 'en'.`);
+                    lang = "en";
+                }
+
+                const lines = [
+                    "# Environment configuration for the VOX server",
+                    `XI_API_KEY=${xi}`,
+                    `AGENT_ID=${agent}`,
+                    `PORT=${port}`,
+                    `AGENT_LANGUAGE=${lang}`,
+                    ""
+                ];
+
+                fs.writeFileSync(envPath, lines.join("\n"), { flag: "wx" });
+                console.log(`.env created at ${envPath}`);
+
+                if (!xi || !agent) {
+                    console.error("Required values missing. Please edit .env and restart the server.");
+                    process.exit(1);
+                }
+
+                console.log("Environment configured. Please restart the server.");
+                process.exit(0);
+            } catch (e) {
+                console.error("Failed to create .env interactively:", e?.message || e);
+                process.exit(1);
+            } finally {
+                rl.close();
+            }
+        })();
+    } else {
+        // Fallback: scaffold .env if missing, then exit with instructions
+        try {
+            if (!fs.existsSync(envPath)) {
+                const scaffold = [
+                    "# Environment configuration for the VOX server",
+                    "# Fill in the required values and restart the server.",
+                    "",
+                    "# ElevenLabs API key",
+                    "XI_API_KEY=<add your api key>",
+                    "",
+                    "# ElevenLabs Convai Agent ID",
+                    "AGENT_ID=<add your agent id>",
+                    "",
+                    "# Optional: Port to run the server on (defaults to 3000)",
+                    "# PORT=3000",
+                    "",
+                    "# Optional: Agent language (default 'en'; supported: en, tr)",
+                    "# AGENT_LANGUAGE=en"
+                ].join("\n");
+                fs.writeFileSync(envPath, scaffold, { flag: "wx" });
+            }
+        } catch (e) {
+            console.error("Failed to scaffold .env:", e?.message || e);
+        }
+
+        console.error(
+            `Missing required environment variables: ${missingEnv.join(", ")}`
+        );
+        console.error(
+            "A .env file has been created/scaffolded in the project root. " +
+            "Please fill in the required values and restart the server."
+        );
+        process.exit(1);
+    }
+}
 const microtime = () => new Date().getTime();
 const app = express();
 app.use(cors());
@@ -161,7 +205,14 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
 
     var geo = geoip(req.ip);
     var today = getDateDetails();
-    var system_prompt = fs.readFileSync("./system_prompt.txt", "utf8").trim().render(
+    const lang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
+    const promptPath = path.join(__dirname, `./content/${lang}/system.md`);
+    if (!fs.existsSync(promptPath)) {
+        console.error(`System prompt for language '${lang}' not found at ${promptPath}.`);
+        console.error("Set AGENT_LANGUAGE to a supported value or add the missing prompt file.");
+        process.exit(1);
+    }
+    var system_prompt = fs.readFileSync(promptPath, "utf8").trim().render(
         {
             date: today.day + " " + today.monthName + " " + today.year + ", " + today.dayName,
             day: today.dayName,
@@ -178,6 +229,7 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
     const dayPhase = req.params.dayPhase || "day";
 
     // Get random greeting for the day phase
+    const greetings = JSON.parse(fs.readFileSync("./content/" + lang + "/greetings.json", "utf8"));
     const phaseGreetings = greetings[dayPhase] || greetings["day"];
     const randomGreeting = phaseGreetings[Math.floor(Math.random() * phaseGreetings.length)];
 

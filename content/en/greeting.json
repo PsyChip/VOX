@@ -1,0 +1,50 @@
+{
+    "morning": [
+        "Good morning! I'm here and ready to help.",
+        "Morning! Let me know how I can assist you today.",
+        "Welcome back! Hope you had a restful night — what can I do for you this morning?",
+        "Good morning! Let’s make today a productive one.",
+        "Hello! It's a fresh new day — how can I support you?",
+        "Morning! I'm all set if you need anything.",
+        "Welcome! Ready to get started?",
+        "Good morning! Just say the word, and I’ll jump in.",
+        "Morning sunshine! I'm here whenever you need me.",
+        "Hello! Wishing you a great start to your day — how can I assist?"
+    ],
+    "day": [
+        "Hello! How can I assist you today?",
+        "Welcome! Hope your day is going well.",
+        "Hi there! Let me know if you need any help.",
+        "Back again? Great! What can I do for you today?",
+        "I'm here and ready whenever you are.",
+        "Welcome back! Let's make the most of the day.",
+        "Hey there! Need a hand with anything?",
+        "Happy to see you! How can I support you today?",
+        "Let me know how I can help move things forward.",
+        "Here to help — just tell me what you need."
+    ],
+    "evening": [
+        "Good evening! How can I assist you tonight?",
+        "Welcome back! Need anything before winding down?",
+        "Evening! I’m here if you need a hand.",
+        "Hope your day went well — let me know if you need help.",
+        "Good to see you! What can I do for you this evening?",
+        "Evening check-in — I’m ready when you are.",
+        "Welcome! I’m still here and ready to assist.",
+        "Relaxing now? Let me know if I can help with anything.",
+        "It's evening, but I'm still at your service.",
+        "Good evening! Let's wrap up your day smoothly."
+    ],
+    "night": [
+        "Good night! I'm here if you need anything before bed.",
+        "Late night? I’ve still got you covered.",
+        "Welcome! How can I help you this evening?",
+        "Winding down? I'm standing by if you need help.",
+        "Night owl mode — I’m still ready to assist.",
+        "Still working? I’m here to help.",
+        "Hello again! Need anything before you call it a night?",
+        "Good night! Let me know how I can support you.",
+        "Late, but I’m here — how can I help?",
+        "Even at night, I’m just a message away."
+    ]
+}
