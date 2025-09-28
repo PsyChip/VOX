@@ -256,6 +256,7 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
         const data = await response.json();
         payload.signedUrl = data.signed_url;
         res.json(payload);
+        console.log(payload);
     } catch (error) {
         console.error("Error:", error);
         res.status(500).json({ error: "Failed to get signed URL" });

@@ -23,6 +23,7 @@ let silenceTimer = null;
 let speechSamplesAboveThreshold = 0;
 let lastSpeechTimestamp = 0;
 let lowEnd = false;
+let veryLowEnd = false;
 let temporaryOverdrive = false; // Temporary overdrive to increase audio level by 250%
 
 function getDayPhase() {
@@ -54,13 +55,17 @@ async function initializeTools() {
 }
 
 const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-let w = ctx.canvas.width = window.innerWidth;
-let h = ctx.canvas.height = window.innerHeight;
+let ctx = null; // initialized after performance detection
+let w = window.innerWidth;
+let h = window.innerHeight;
 
 window.onresize = function () {
-    w = ctx.canvas.width = window.innerWidth;
-    h = ctx.canvas.height = window.innerHeight;
+    w = window.innerWidth;
+    h = window.innerHeight;
+    if (ctx) {
+        ctx.canvas.width = w;
+        ctx.canvas.height = h;
+    }
 };
 
 let nrt = 0;
@@ -77,6 +82,8 @@ var sid = 0;
 let micName = "";
 let convolver;
 let impulse;
+// Very low-end UI indicator element must be declared before any use
+let _stateIndicatorEl = null;
 
 function isStereoMix(device) {
     const stereoMix = [
@@ -130,17 +137,25 @@ function showSubtitle() {
 }
 
 function detectPerformance() {
+    const hasVeryLowMemory = navigator.deviceMemory && navigator.deviceMemory <= 4;
     const hasLowMemory = navigator.deviceMemory && navigator.deviceMemory < 8;
-    if (hasLowMemory) {
+
+    if (hasVeryLowMemory) {
+        veryLowEnd = true;
+        lowEnd = false;
+        console.log("Very low performance mode enabled");
+    } else if (hasLowMemory) {
         lowEnd = true;
         console.log("Low performance mode enabled");
     }
 
-    if (window.location.search.includes('lowend=true')) {
-        lowEnd = true;
-    }
-    if (window.location.search.includes('lowend=false')) {
-        lowEnd = false;
+    // URL overrides
+    if (window.location.search.includes('lowend=verylow')) {
+        veryLowEnd = true; lowEnd = false;
+    } else if (window.location.search.includes('lowend=true')) {
+        lowEnd = true; veryLowEnd = false;
+    } else if (window.location.search.includes('lowend=false')) {
+        lowEnd = false; veryLowEnd = false;
     }
 }
 
@@ -221,6 +236,8 @@ function detectSpeechActivity() {
 }
 
 function onEndOfSentenceDetected() {
+    // Skip visual EoS hints in very low-end mode
+    if (veryLowEnd) return;
     const indicator = document.createElement("div");
     indicator.style.position = "fixed";
     indicator.style.bottom = "20px";
@@ -388,6 +405,7 @@ async function startConversation() {
                 connected = true;
                 _join.play();
                 hideDisconnectionBox();
+                if (veryLowEnd) setStateIndicator('idle');
             },
             onDisconnect: () => {
                 agentTalking = false;
@@ -401,6 +419,7 @@ async function startConversation() {
                 }, 1000);
                 _leave.play();
                 showDisconnectionBox();
+                if (veryLowEnd) setStateIndicator('loading');
             },
             onError: (error) => {
                 console.error('Conversation error:', error);
@@ -413,15 +432,18 @@ async function startConversation() {
                     subtitle.innerHTML = "[" + error.reason + "]";
                 }
                 connected = false;
+                if (veryLowEnd) setStateIndicator('idle');
             },
             onModeChange: (m) => {
                 console.log(m);
                 if (m.mode === "speaking") {
                     agentTalking = true;
+                    if (veryLowEnd) setStateIndicator('agent');
                 } else {
                     agentTalking = false;
                     clearTimeout(stimer);
                     subtitle.innerHTML = "";
+                    if (veryLowEnd) setStateIndicator('idle');
                 }
             },
             onMessage: (m) => {
@@ -437,46 +459,54 @@ async function startConversation() {
                     }
                 } else if (m.source === "user") {
                     hideListPanel();
+                    if (veryLowEnd) {
+                        setStateIndicator('user');
+                        setTimeout(() => {
+                            if (!agentTalking) setStateIndicator('idle');
+                        }, 1200);
+                    }
                 }
             }
         });
 
-        convolver = conversation.output.context.createConvolver();
-        agentAnalyser = conversation.output.analyser;
-        impulse = await createReverb(0.75, 1.25, false);
-        convolver.buffer = impulse;
+        if (!veryLowEnd) {
+            convolver = conversation.output.context.createConvolver();
+            agentAnalyser = conversation.output.analyser;
+            impulse = await createReverb(0.75, 1.25, false);
+            convolver.buffer = impulse;
 
-        // Set unity output level (100%) with a balanced wet/dry mix
-        const wetGain = conversation.output.context.createGain();
-        const dryGain = conversation.output.context.createGain();
-        // Keep overall gain at ~1.0 to avoid perceived volume drop
-        wetGain.gain.value = temporaryOverdrive ? 0.5 : 0.3; // reverb (wet)
-        dryGain.gain.value = temporaryOverdrive ? 0.5 : 0.7; // direct (dry)
+            // Set unity output level (100%) with a balanced wet/dry mix
+            const wetGain = conversation.output.context.createGain();
+            const dryGain = conversation.output.context.createGain();
+            // Keep overall gain at ~1.0 to avoid perceived volume drop
+            wetGain.gain.value = temporaryOverdrive ? 0.5 : 0.3; // reverb (wet)
+            dryGain.gain.value = temporaryOverdrive ? 0.5 : 0.7; // direct (dry)
 
-        // Master gain to control final output level explicitly
-        const masterGain = conversation.output.context.createGain();
-        masterGain.gain.value = 1.0; // ensure 100% output volume
+            // Master gain to control final output level explicitly
+            const masterGain = conversation.output.context.createGain();
+            masterGain.gain.value = 1.0; // ensure 100% output volume
 
-        const destination = conversation.output.analyser.context.destination;
-        conversation.output.analyser.disconnect();
-        conversation.output.analyser.connect(dryGain);
-        conversation.output.analyser.connect(convolver);
-        convolver.connect(wetGain);
+            const destination = conversation.output.analyser.context.destination;
+            conversation.output.analyser.disconnect();
+            conversation.output.analyser.connect(dryGain);
+            conversation.output.analyser.connect(convolver);
+            convolver.connect(wetGain);
 
-        // Mix wet/dry into master, then to destination
-        wetGain.connect(masterGain);
-        dryGain.connect(masterGain);
-        masterGain.connect(destination);
+            // Mix wet/dry into master, then to destination
+            wetGain.connect(masterGain);
+            dryGain.connect(masterGain);
+            masterGain.connect(destination);
 
-        if (lowEnd === true) {
-            agentAnalyser.fftSize = 64;
-            agentAnalyser.smoothingTimeConstant = 0.35;
-        } else {
-            agentAnalyser.fftSize = 128;
-            agentAnalyser.smoothingTimeConstant = 0.45;
+            if (lowEnd === true) {
+                agentAnalyser.fftSize = 64;
+                agentAnalyser.smoothingTimeConstant = 0.35;
+            } else {
+                agentAnalyser.fftSize = 128;
+                agentAnalyser.smoothingTimeConstant = 0.45;
+            }
+            agentAnalyser.maxDecibels = 0;
+            agentAnalyser.minDecibels = -100;
         }
-        agentAnalyser.maxDecibels = 0;
-        agentAnalyser.minDecibels = -100;
 
     } catch (error) {
         connected = false;
@@ -500,10 +530,19 @@ async function startConversation() {
         return;
     }
     detectPerformance();
-    if (lowEnd === true) {
+    if (veryLowEnd === true) {
+        if (canvas) canvas.style.display = 'none';
+        setupVeryLowEndUI();
+    } else if (lowEnd === true) {
         config.glow = 0;
         config.multiplier = 10;
         config.coef = 0.05;
+    }
+
+    if (!veryLowEnd) {
+        ctx = canvas.getContext("2d");
+        w = ctx.canvas.width = window.innerWidth;
+        h = ctx.canvas.height = window.innerHeight;
     }
 
     const constraints = { audio: true };
@@ -553,39 +592,43 @@ async function startConversation() {
 function initializeAudio(stream) {
     window.persistAudioStream = stream;
 
-    audioContent = new AudioContext();
-    audioStream = audioContent.createMediaStreamSource(stream);
-    analyser = audioContent.createAnalyser();
+    if (!veryLowEnd) {
+        audioContent = new AudioContext();
+        audioStream = audioContent.createMediaStreamSource(stream);
+        analyser = audioContent.createAnalyser();
 
-    if (lowEnd === true) {
-        analyser.fftSize = 64;
-        analyser.smoothingTimeConstant = 0.25;
-    } else {
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.6;
+        if (lowEnd === true) {
+            analyser.fftSize = 64;
+            analyser.smoothingTimeConstant = 0.25;
+        } else {
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.6;
+        }
+
+        analyser.maxDecibels = 0;
+        analyser.minDecibels = -100;
+        audioStream.connect(analyser);
+
+        frequencyDataLen = analyser.frequencyBinCount;
+        frequencyData = new Uint8Array(frequencyDataLen);
+
+        clear();
+        render();
     }
-
-    analyser.maxDecibels = 0;
-    analyser.minDecibels = -100;
-    audioStream.connect(analyser);
-
-    frequencyDataLen = analyser.frequencyBinCount;
-    frequencyData = new Uint8Array(frequencyDataLen);
-
-    clear();
-    render();
     (async function () {
         await startConversation();
     })();
 }
 
 function flush() {
+    if (!frequencyData) return;
     for (let i = 0; i < frequencyData.length; i++) {
         frequencyData[i] = 0;
     }
 }
 
 function clear() {
+    if (!ctx) return;
     ctx.beginPath();
     const grd = ctx.createLinearGradient(w / 2, 0, w / 2, h);
     grd.addColorStop(0, "hsl(" + (config.hueStart + npt * config.colorSpeed) + ", 35%, 10%");
@@ -721,6 +764,7 @@ function drawSpectrum() {
 }
 
 function render() {
+    if (!ctx) return;
     clear();
     drawSpectrum();
     requestAnimationFrame(render);
@@ -728,8 +772,50 @@ function render() {
 
 function averageFrequency() {
     let avg = 0;
+    if (!frequencyData) return 0;
     for (let i = 0; i < frequencyData.length; i++) {
         avg += frequencyData[i];
     }
     return avg;
+}
+
+// Very low-end mode: simple circular indicator for states
+function setupVeryLowEndUI() {
+    _stateIndicatorEl = document.createElement('div');
+    _stateIndicatorEl.id = 'stateIndicator';
+    _stateIndicatorEl.style.position = 'fixed';
+    _stateIndicatorEl.style.left = '50%';
+    _stateIndicatorEl.style.top = '50%';
+    _stateIndicatorEl.style.transform = 'translate(-50%, -50%)';
+    _stateIndicatorEl.style.width = '120px';
+    _stateIndicatorEl.style.height = '120px';
+    _stateIndicatorEl.style.borderRadius = '50%';
+    _stateIndicatorEl.style.display = 'flex';
+    _stateIndicatorEl.style.alignItems = 'center';
+    _stateIndicatorEl.style.justifyContent = 'center';
+    _stateIndicatorEl.style.color = '#fff';
+    _stateIndicatorEl.style.fontFamily = 'Jost, system-ui, -apple-system, sans-serif';
+    _stateIndicatorEl.style.fontSize = '14px';
+    _stateIndicatorEl.style.boxShadow = '0 0 20px rgba(0,0,0,0.5)';
+    document.body.appendChild(_stateIndicatorEl);
+    setStateIndicator('loading');
+}
+
+function setStateIndicator(state) {
+    if (!_stateIndicatorEl) return;
+    let bg = '#555', label = '';
+    switch (state) {
+        case 'loading':
+            bg = '#555555'; label = 'Loading'; break;
+        case 'idle':
+            bg = '#2a6f97'; label = 'Idle'; break;
+        case 'user':
+            bg = '#1b5b01'; label = 'You'; break; // user -> green
+        case 'agent':
+            bg = '#c02112'; label = 'Agent'; break; // agent -> red
+        default:
+            bg = '#555555'; label = state;
+    }
+    _stateIndicatorEl.style.background = bg;
+    _stateIndicatorEl.textContent = label;
 }
