@@ -446,11 +446,16 @@ async function startConversation() {
         impulse = await createReverb(0.75, 1.25, false);
         convolver.buffer = impulse;
 
+        // Set unity output level (100%) with a balanced wet/dry mix
         const wetGain = conversation.output.context.createGain();
-        wetGain.gain.value = temporaryOverdrive ? 0.525 : 0.15; // Increased by 250% when overdrive is enabled
-
         const dryGain = conversation.output.context.createGain();
-        dryGain.gain.value = temporaryOverdrive ? 0.875 : 0.25; // Increased by 250% when overdrive is enabled
+        // Keep overall gain at ~1.0 to avoid perceived volume drop
+        wetGain.gain.value = temporaryOverdrive ? 0.5 : 0.3; // reverb (wet)
+        dryGain.gain.value = temporaryOverdrive ? 0.5 : 0.7; // direct (dry)
+
+        // Master gain to control final output level explicitly
+        const masterGain = conversation.output.context.createGain();
+        masterGain.gain.value = 1.0; // ensure 100% output volume
 
         const destination = conversation.output.analyser.context.destination;
         conversation.output.analyser.disconnect();
@@ -458,8 +463,10 @@ async function startConversation() {
         conversation.output.analyser.connect(convolver);
         convolver.connect(wetGain);
 
-        wetGain.connect(destination);
-        dryGain.connect(destination);
+        // Mix wet/dry into master, then to destination
+        wetGain.connect(masterGain);
+        dryGain.connect(masterGain);
+        masterGain.connect(destination);
 
         if (lowEnd === true) {
             agentAnalyser.fftSize = 64;
