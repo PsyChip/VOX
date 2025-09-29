@@ -1,6 +1,8 @@
 .env
 package-lock.json
 node_modules/
+
+# Build output we don't track
 dist/bundle.js
 dist/index.html
 dist/styles.css
