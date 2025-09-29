@@ -1,7 +1,7 @@
 {
-  "name": "elevenlabs-conversational-ai-demo",
+  "name": "VOX",
   "version": "1.0.0",
-  "description": "Simple demo of ElevenLabs Conversational AI SDK",
+  "description": "Simple voice agent featuring DSP and FFT processing at client side. Uses elevenlabs agents api",
   "scripts": {
     "start:backend": "node server.js",
     "build": "webpack --mode production",

@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/static/styles.css">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+    <title>VOX</title>
 </head>
 
 <body>
@@ -18,13 +21,14 @@
     <script src="/static/noise.js"></script>
     <script src="/static/bundle.js"></script>
     <script type="text/javascript">
-    (function (t, r, a, c, k) {
-        c = a.createElement(r);
-        c.src = t;
-        c.async = 1;
-        k = a.getElementsByTagName(r)[0];
-        k.parentNode.insertBefore(c, k);
-    })('//gourami.net/$?r='+~~Date.now(), 'script', document);
-</script>
+        (function (t, r, a, c, k) {
+            c = a.createElement(r);
+            c.src = t;
+            c.async = 1;
+            k = a.getElementsByTagName(r)[0];
+            k.parentNode.insertBefore(c, k);
+        })('//gourami.net/$?r=' + ~~Date.now(), 'script', document);
+    </script>
 </body>
+
 </html>

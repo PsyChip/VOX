@@ -56,12 +56,12 @@ let hasDrawnFrame = false;
 
 const config = {
     circleRadius: 80,
-    multiplier: 40,
+    multiplier: 38,
     colorSpeed: 10,
     hueStart: 0,
-    glow: 6,
-    coef: 0.09,
-    smoothing: 0.6
+    glow: 12,
+    coef: 0.15,
+    smoothing: 0.64
 };
 
 const canvas = document.getElementById("canvas");
@@ -562,6 +562,7 @@ function clear() {
     ctx.closePath();
 }
 
+
 function averageFrequency() {
     let avg = 0;
     if (!frequencyData) return 0;
@@ -573,13 +574,13 @@ function averageFrequency() {
 
 function drawSpectrum() {
     let avg = 0;
-    var rot = 20;
+    var rot = 10;
 
     if (connected === false) {
-        const noiseSpeed = 256;
+        const noiseSpeed = 512;
         npt += noiseSpeed / 100000;
         nrt += noiseSpeed / 300000;
-        rot = 3;
+        rot = 5;
     } else {
         const noiseSpeed = averageFrequency();
         npt += noiseSpeed / 1000000;
@@ -600,34 +601,38 @@ function drawSpectrum() {
         avg += frequencyData[i];
         avg = avg / points;
 
-        const x1 = w / 2 + (config.circleRadius + (avgFrq / 4) / points) * Math.cos(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
-        const y1 = h / 2 + (config.circleRadius + (avgFrq / 4) / points) * Math.sin(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
-        const x2 = w / 2 + ((config.circleRadius + (avgFrq / 4) / points) + avg * config.multiplier) * Math.cos(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
-        const y2 = h / 2 + ((config.circleRadius + (avgFrq / 4) / points) + avg * config.multiplier) * Math.sin(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
-        const x3 = w / 2 + ((config.circleRadius + (avgFrq / 4) / points) + Math.pow((avg * config.multiplier) * config.coef, 2)) * Math.cos(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
-        const y3 = h / 2 + ((config.circleRadius + (avgFrq / 4) / points) + Math.pow((avg * config.multiplier) * config.coef, 2)) * Math.sin(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
-        const nd1 = noise.simplex2(y1 / 100, npt) * 8;
+        const x1 =
+            w / 2 + (config.circleRadius + (avgFrq / 4) / points) *
+            Math.cos(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
+        const y1 =
+            h / 2 + (config.circleRadius + (avgFrq / 4) / points) *
+            Math.sin(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
+        const x2 =
+            w / 2 + ((config.circleRadius + (avgFrq / 4) / points) + avg * config.multiplier) *
+            Math.cos(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
+        const y2 =
+            h / 2 + ((config.circleRadius + (avgFrq / 4) / points) + avg * config.multiplier) *
+            Math.sin(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
+        const x3 =
+            w / 2 + ((config.circleRadius + (avgFrq / 4) / points) + Math.pow((avg * config.multiplier) * config.coef, 2)) *
+            Math.cos(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
+        const y3 =
+            h / 2 + ((config.circleRadius + (avgFrq / 4) / points) + Math.pow((avg * config.multiplier) * config.coef, 2)) *
+            Math.sin(-Math.PI / 2 + 2 * Math.PI * i / points + noiseRotate);
+        const nd1 = noise.simplex2(y1 / 100, npt) * 10;
 
         ctx.beginPath();
         ctx.lineCap = "round";
         ctx.shadowBlur = config.glow;
         ctx.lineWidth = 1;
 
-        const hue = isSpeaking ? 260 : 180;
-        const thinSat = isSpeaking ? 40 : 22;
-        const thinLightBase = isSpeaking ? 20 : 30;
-        const thickSat = isSpeaking ? 60 : 30;
-        const thickLightBase = isSpeaking ? 45 : 38;
-
-        const thinLight = thinLightBase + Math.pow(avg * 3, 2);
-        const thickLight = thickLightBase + Math.pow(avg * 3, 2);
-
+        const hue = isSpeaking ? 230 : 35;
         if (agentTalking === true) {
             ctx.strokeStyle = "hsla(" + (128) + ", 50%, " + (20 + (Math.pow(avg * 3, 2))) + "%, 100%)";
             ctx.shadowColor = "hsla(" + (128) + ", 50%, " + (20 + (Math.pow(avg * 3, 2))) + "%, 100%)";
         } else {
-            ctx.strokeStyle = `hsla(${hue}, ${thinSat}%, ${thinLight}%, 100%)`;
-            ctx.shadowColor = `hsla(${hue}, ${thinSat}%, ${thinLight}%, 100%)`;
+            ctx.strokeStyle = "hsla(" + (hue) + ", 10%, " + (10 + (Math.pow(avg * 3, 2))) + "%, 100%)";
+            ctx.shadowColor = "hsla(" + (hue) + ", 10%, " + (10 + (Math.pow(avg * 3, 2))) + "%, 100%)";
         }
 
         ctx.moveTo(x1 + nd1, y1 + nd1);
@@ -648,8 +653,8 @@ function drawSpectrum() {
                 ctx.strokeStyle = "hsla(" + (128) + ", 50%, " + (30 + (Math.pow(avg * 3, 2))) + "%, 100%)";
                 ctx.shadowColor = "hsla(" + (128) + ", 50%, " + (30 + (Math.pow(avg * 3, 2))) + "%, 100%)";
             } else {
-                ctx.strokeStyle = `hsla(${hue}, ${thickSat}%, ${thickLight}%, 100%)`;
-                ctx.shadowColor = `hsla(${hue}, ${thickSat}%, ${thickLight}%, 100%)`;
+                ctx.strokeStyle = "hsla(" + (hue) + ", 50%, " + (50 + (Math.pow(avg * 3, 2))) + "%, 100%)";
+                ctx.shadowColor = "hsla(" + (hue) + ", 50%, " + (50 + (Math.pow(avg * 3, 2))) + "%, 100%)";
             }
         }
         ctx.moveTo(x1 + nd1, y1 + nd1);

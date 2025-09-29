@@ -53,40 +53,36 @@ function geoip(ip) {
 function getDateDetails() {
     const now = new Date();
 
-    const day = now.getDate(); // Numeric day (1-31)
-    const month = now.getMonth() + 1; // Numeric month (0-11, so add 1)
-    const year = now.getFullYear(); // Full year
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
 
-    const lang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
-    const dayNames_en = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const monthNames_en = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    ];
-    const dayNames_tr = ["Pazar", "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi"];
-    const monthNames_tr = [
-        "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
-        "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
-    ];
+    const currentLang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
+    const localePath = path.join(__dirname, `./content/${currentLang}/date.json`);
+    let dayNames;
+    let monthNames;
 
-    const dayNames = lang === 'tr' ? dayNames_tr : dayNames_en;
-    const monthNames = lang === 'tr' ? monthNames_tr : monthNames_en;
+    try {
+        if (fs.existsSync(localePath)) {
+            const dateLocale = JSON.parse(fs.readFileSync(localePath, "utf8"));
+            if (Array.isArray(dateLocale.dayNames) && dateLocale.dayNames.length === 7) {
+                dayNames = dateLocale.dayNames;
+            }
+            if (Array.isArray(dateLocale.monthNames) && dateLocale.monthNames.length === 12) {
+                monthNames = dateLocale.monthNames;
+            }
+        }
+    } catch (e) {
+        console.warn(`Failed to load date locale from ${localePath}, falling back to defaults.`);
+    }
 
-    const dayName = dayNames[now.getDay()]; // Day of the week
-    const monthName = monthNames[now.getMonth()]; // Month name
+    const dayName = dayNames[now.getDay()];
+    const monthName = monthNames[now.getMonth()];
 
-    return {
-        day,
-        month,
-        year,
-        dayName,
-        monthName
-    };
+    return { day, month, year, dayName, monthName };
 }
 
 dotenv.config();
-
-// Validate required environment variables early
 const requiredEnvVars = ["XI_API_KEY", "AGENT_ID"];
 const missingEnv = requiredEnvVars.filter(
     (k) => !process.env[k] || String(process.env[k]).trim() === ""
@@ -99,7 +95,6 @@ if (missingEnv.length > 0) {
     const shouldPrompt = isInteractivePlatform && process.stdin.isTTY && !fs.existsSync(envPath);
 
     if (shouldPrompt) {
-        // Interactive prompt for Mac/Windows when creating .env
         const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
         const ask = (q) => new Promise((resolve) => rl.question(q, (ans) => resolve(ans.trim())));
 
@@ -225,7 +220,6 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
         }
     );
 
-    // Get day phase from URL parameter or default to "day"
     const dayPhase = req.params.dayPhase || "day";
 
     // Get random greeting for the day phase
@@ -263,14 +257,6 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
     }
 });
 
-app.get("/api/getAgentId", (req, res) => {
-    const agentId = process.env.AGENT_ID;
-    res.json({
-        agentId: `${agentId}`
-    });
-});
-
-// Serve index.html for all other routes
 app.get("*", (req, res) => {
     res.sendFile(path.join(__dirname, "./dist/index.html"));
 });
