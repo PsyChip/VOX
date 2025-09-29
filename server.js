@@ -246,6 +246,25 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
             throw new Error("Failed to get signed URL");
         }
 
+        const tools = await fetch(
+            `https://api.elevenlabs.io/v1/convai/tools`,
+            {
+                method: "GET",
+                headers: {
+                    "xi-api-key": process.env.XI_API_KEY,
+                },
+            }
+        );
+
+        if (!tools.ok) {
+            throw new Error("Failed to get tools");
+        }
+        const toolsData = await tools.json();
+        payload.tool_ids = [];
+        for (var i = 0; i < toolsData.tools.length; i++) {
+            payload.tool_ids.push(toolsData.tools[i].id);
+        }
+
         const data = await response.json();
         payload.signedUrl = data.signed_url;
         res.json(payload);

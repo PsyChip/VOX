@@ -344,7 +344,7 @@ async function startConversation() {
                 agent: {
                     prompt: {
                         prompt: tools.system,
-                        tool_ids: ["tool_01k0hw6g2hfdfscx17h0v1s4s1"],
+                        tool_ids: tools.tool_ids || [],
                     },
                     firstMessage: tools.firstMessage,
                 },
