@@ -3,15 +3,106 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="/static/styles.css">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <link rel="icon" href="/favicon.ico" type="image/x-icon" />
-    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon" />
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon" />
     <title>VOX</title>
 </head>
 
 <body>
+    <div id="loaderOverlay">
+        <div class="loader"></div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var overlay = document.getElementById('loaderOverlay');
+            if (!overlay)
+                return;
+            var loader = overlay.querySelector('.loader');
+            if (!loader)
+                return;
+
+            if (!loader.children.length) {
+                var fragment = document.createDocumentFragment();
+                for (var i = 0; i < 90; i++) {
+                    var dot = document.createElement('div');
+                    dot.className = 'loader-dot';
+                    fragment.appendChild(dot);
+                }
+                loader.appendChild(fragment);
+            }
+
+            var dots = Array.from(loader.getElementsByClassName('loader-dot'));
+            var loaderFrame = null;
+            var loaderTime = 0;
+            var active = false;
+            var radius = 80;
+            var noiseState = { npt: 0, nrt: 0 };
+
+            function step() {
+                if (!active || dots.length === 0)
+                    return;
+
+                var dotCount = dots.length;
+                var noiseLib = window.noise;
+
+                if (!noiseLib) {
+                    loaderTime += 0.01;
+                    for (var i = 0; i < dotCount; i++) {
+                        var angle = (i / dotCount) * Math.PI * 2;
+                        var wave1 = Math.sin(angle * 3 + loaderTime) * 15;
+                        var wave2 = Math.cos(angle * 5 + loaderTime * 0.7) * 8;
+                        var offset = wave1 + wave2;
+                        var x = Math.cos(angle) * (radius + offset);
+                        var y = Math.sin(angle) * (radius + offset);
+                        dots[i].style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+                    }
+                } else {
+                    noiseState.npt += 512 / 100000;
+                    noiseState.nrt += 512 / 300000;
+                    var rot = 5;
+                    var noiseRotate = noiseLib.perlin2(rot, noiseState.nrt);
+                    var baseRadius = 80;
+
+                    for (var j = 0; j < dotCount; j++) {
+                        var angle2 = -Math.PI / 2 + (2 * Math.PI * j) / dotCount + noiseRotate;
+                        var xBase = Math.cos(angle2) * baseRadius;
+                        var yBase = Math.sin(angle2) * baseRadius;
+                        var offset2 = noiseLib.simplex2(yBase / 100, noiseState.npt) * 10;
+                        var x2 = xBase + offset2;
+                        var y2 = yBase + offset2;
+                        dots[j].style.transform = 'translate(' + x2 + 'px, ' + y2 + 'px)';
+                    }
+                }
+
+                loaderFrame = requestAnimationFrame(step);
+            }
+
+            function start() {
+                if (active)
+                    return;
+                active = true;
+                loaderTime = 0;
+                noiseState.npt = 0;
+                noiseState.nrt = 0;
+                loaderFrame = requestAnimationFrame(step);
+            }
+
+            function stop() {
+                active = false;
+                if (loaderFrame) {
+                    cancelAnimationFrame(loaderFrame);
+                    loaderFrame = null;
+                }
+            }
+
+            window.startLoaderAnimation = start;
+            window.stopLoaderAnimation = stop;
+
+            start();
+        })();
+    </script>
     <canvas id="canvas"></canvas>
     <div id="subtitle">[connecting]</div>
     <div id="listPanel">

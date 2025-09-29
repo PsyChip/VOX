@@ -22,8 +22,8 @@ let silenceTimer = null;
 let speechSamplesAboveThreshold = 0;
 let lastSpeechTimestamp = 0;
 let lowEnd = false;
-let veryLowEnd = false;
 let temporaryOverdrive = false;
+let toolsConfig = null;
 
 let ctx = null;
 let w = window.innerWidth;
@@ -43,15 +43,8 @@ var sid = 0;
 let micName = "";
 let convolver;
 let impulse;
-let _stateIndicatorEl = null;
 
-const LOADER_DOT_COUNT = 90;
-const LOADER_RADIUS = 80;
 let loaderOverlay = null;
-let loaderDots = [];
-let loaderFrame = null;
-let loaderTime = 0;
-let loaderActive = false;
 let hasDrawnFrame = false;
 
 const config = {
@@ -124,24 +117,17 @@ function showSubtitle() {
 }
 
 function detectPerformance() {
-    const hasVeryLowMemory = navigator.deviceMemory && navigator.deviceMemory <= 4;
     const hasLowMemory = navigator.deviceMemory && navigator.deviceMemory < 8;
 
-    if (hasVeryLowMemory) {
-        veryLowEnd = true;
-        lowEnd = false;
-        console.log("Very low performance mode enabled");
-    } else if (hasLowMemory) {
+    if (hasLowMemory) {
         lowEnd = true;
         console.log("Low performance mode enabled");
     }
 
-    if (window.location.search.includes('lowend=verylow')) {
-        veryLowEnd = true; lowEnd = false;
-    } else if (window.location.search.includes('lowend=true')) {
-        lowEnd = true; veryLowEnd = false;
+    if (window.location.search.includes('lowend=true') || window.location.search.includes('lowend=verylow')) {
+        lowEnd = true;
     } else if (window.location.search.includes('lowend=false')) {
-        lowEnd = false; veryLowEnd = false;
+        lowEnd = false;
     }
 }
 
@@ -205,7 +191,6 @@ function detectSpeechActivity() {
 }
 
 function onEndOfSentenceDetected() {
-    if (veryLowEnd) return;
     const indicator = document.createElement("div");
     indicator.style.position = "fixed";
     indicator.style.bottom = "20px";
@@ -351,6 +336,7 @@ async function initializeTools() {
 async function startConversation() {
     try {
         const tools = await initializeTools();
+        toolsConfig = tools;
         console.log(tools);
         conversation = await Conversation.startSession({
             signedUrl: tools.signedUrl,
@@ -358,7 +344,7 @@ async function startConversation() {
                 agent: {
                     prompt: {
                         prompt: tools.system,
-                        tool_ids: ["tool_01k0hw6g2hfdfscx17h0v1s4s1", "tool_01k0j08qadf76b8yd0y98dq1mm"],
+                        tool_ids: ["tool_01k0hw6g2hfdfscx17h0v1s4s1"],
                     },
                     firstMessage: tools.firstMessage,
                 },
@@ -385,7 +371,6 @@ async function startConversation() {
                 connected = true;
                 _join.play();
                 hideDisconnectionBox();
-                if (veryLowEnd) setStateIndicator('idle');
             },
             onDisconnect: () => {
                 agentTalking = false;
@@ -399,11 +384,9 @@ async function startConversation() {
                 }, 1000);
                 _leave.play();
                 showDisconnectionBox();
-                if (veryLowEnd) setStateIndicator('loading');
             },
             onError: (error) => {
                 console.error('Conversation error:', error);
-
                 _err.play();
                 flush();
                 clearTimeout(stimer);
@@ -412,18 +395,15 @@ async function startConversation() {
                     subtitle.innerHTML = "[" + error.reason + "]";
                 }
                 connected = false;
-                if (veryLowEnd) setStateIndicator('idle');
             },
             onModeChange: (m) => {
                 console.log(m);
                 if (m.mode === "speaking") {
                     agentTalking = true;
-                    if (veryLowEnd) setStateIndicator('agent');
                 } else {
                     agentTalking = false;
                     clearTimeout(stimer);
                     subtitle.innerHTML = "";
-                    if (veryLowEnd) setStateIndicator('idle');
                 }
             },
             onMessage: (m) => {
@@ -438,50 +418,42 @@ async function startConversation() {
                     }
                 } else if (m.source === "user") {
                     hideListPanel();
-                    if (veryLowEnd) {
-                        setStateIndicator('user');
-                        setTimeout(() => {
-                            if (!agentTalking) setStateIndicator('idle');
-                        }, 1200);
-                    }
                 }
             }
         });
 
-        if (!veryLowEnd) {
-            convolver = conversation.output.context.createConvolver();
-            agentAnalyser = conversation.output.analyser;
-            impulse = await createReverb(0.75, 1.25, false);
-            convolver.buffer = impulse;
+        convolver = conversation.output.context.createConvolver();
+        agentAnalyser = conversation.output.analyser;
+        impulse = await createReverb(0.75, 1.25, false);
+        convolver.buffer = impulse;
 
-            const wetGain = conversation.output.context.createGain();
-            const dryGain = conversation.output.context.createGain();
-            wetGain.gain.value = temporaryOverdrive ? 0.5 : 0.3;
-            dryGain.gain.value = temporaryOverdrive ? 0.5 : 0.7;
+        const wetGain = conversation.output.context.createGain();
+        const dryGain = conversation.output.context.createGain();
+        wetGain.gain.value = temporaryOverdrive ? 0.5 : 0.3;
+        dryGain.gain.value = temporaryOverdrive ? 0.5 : 0.7;
 
-            const masterGain = conversation.output.context.createGain();
-            masterGain.gain.value = 1.0;
+        const masterGain = conversation.output.context.createGain();
+        masterGain.gain.value = 1.0;
 
-            const destination = conversation.output.analyser.context.destination;
-            conversation.output.analyser.disconnect();
-            conversation.output.analyser.connect(dryGain);
-            conversation.output.analyser.connect(convolver);
-            convolver.connect(wetGain);
+        const destination = conversation.output.analyser.context.destination;
+        conversation.output.analyser.disconnect();
+        conversation.output.analyser.connect(dryGain);
+        conversation.output.analyser.connect(convolver);
+        convolver.connect(wetGain);
 
-            wetGain.connect(masterGain);
-            dryGain.connect(masterGain);
-            masterGain.connect(destination);
+        wetGain.connect(masterGain);
+        dryGain.connect(masterGain);
+        masterGain.connect(destination);
 
-            if (lowEnd === true) {
-                agentAnalyser.fftSize = 64;
-                agentAnalyser.smoothingTimeConstant = 0.45;
-            } else {
-                agentAnalyser.fftSize = 256;
-                agentAnalyser.smoothingTimeConstant = config.smoothing;
-            }
-            agentAnalyser.maxDecibels = 0;
-            agentAnalyser.minDecibels = -100;
+        if (lowEnd === true) {
+            agentAnalyser.fftSize = 64;
+            agentAnalyser.smoothingTimeConstant = 0.45;
+        } else {
+            agentAnalyser.fftSize = 256;
+            agentAnalyser.smoothingTimeConstant = config.smoothing;
         }
+        agentAnalyser.maxDecibels = 0;
+        agentAnalyser.minDecibels = -100;
 
     } catch (error) {
         connected = false;
@@ -516,29 +488,27 @@ async function createReverb(duration = 2.0, decay = 2.0, reverse = false) {
 function initializeAudio(stream) {
     window.persistAudioStream = stream;
 
-    if (!veryLowEnd) {
-        audioContent = new AudioContext();
-        audioStream = audioContent.createMediaStreamSource(stream);
-        analyser = audioContent.createAnalyser();
+    audioContent = new AudioContext();
+    audioStream = audioContent.createMediaStreamSource(stream);
+    analyser = audioContent.createAnalyser();
 
-        if (lowEnd === true) {
-            analyser.fftSize = 64;
-            analyser.smoothingTimeConstant = 0.45;
-        } else {
-            analyser.fftSize = 256;
-            analyser.smoothingTimeConstant = config.smoothing;
-        }
-
-        analyser.maxDecibels = 0;
-        analyser.minDecibels = -100;
-        audioStream.connect(analyser);
-
-        frequencyDataLen = analyser.frequencyBinCount;
-        frequencyData = new Uint8Array(frequencyDataLen);
-
-        clear();
-        render();
+    if (lowEnd === true) {
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.45;
+    } else {
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = config.smoothing;
     }
+
+    analyser.maxDecibels = 0;
+    analyser.minDecibels = -100;
+    audioStream.connect(analyser);
+
+    frequencyDataLen = analyser.frequencyBinCount;
+    frequencyData = new Uint8Array(frequencyDataLen);
+
+    clear();
+    render();
     (async function () {
         await startConversation();
     })();
@@ -687,126 +657,25 @@ function render() {
     requestAnimationFrame(render);
 }
 
-function setupVeryLowEndUI() {
-    _stateIndicatorEl = document.createElement('div');
-    _stateIndicatorEl.id = 'stateIndicator';
-    _stateIndicatorEl.style.position = 'fixed';
-    _stateIndicatorEl.style.left = '50%';
-    _stateIndicatorEl.style.top = '50%';
-    _stateIndicatorEl.style.transform = 'translate(-50%, -50%)';
-    _stateIndicatorEl.style.width = '120px';
-    _stateIndicatorEl.style.height = '120px';
-    _stateIndicatorEl.style.borderRadius = '50%';
-    _stateIndicatorEl.style.display = 'flex';
-    _stateIndicatorEl.style.alignItems = 'center';
-    _stateIndicatorEl.style.justifyContent = 'center';
-    _stateIndicatorEl.style.color = '#fff';
-    _stateIndicatorEl.style.fontFamily = 'Jost, system-ui, -apple-system, sans-serif';
-    _stateIndicatorEl.style.fontSize = '14px';
-    _stateIndicatorEl.style.boxShadow = '0 0 20px rgba(0,0,0,0.5)';
-    document.body.appendChild(_stateIndicatorEl);
-    setStateIndicator('loading');
-}
-
-function setStateIndicator(state) {
-    if (!_stateIndicatorEl) return;
-    let bg = '#555', label = '';
-    switch (state) {
-        case 'loading':
-            bg = '#555555'; label = 'Loading'; break;
-        case 'idle':
-            bg = '#2a6f97'; label = 'Idle'; break;
-        case 'user':
-            bg = '#1b5b01'; label = 'You'; break;
-        case 'agent':
-            bg = '#c02112'; label = 'Agent'; break;
-        default:
-            bg = '#555555'; label = state;
-    }
-    _stateIndicatorEl.style.background = bg;
-    _stateIndicatorEl.textContent = label;
-}
-
-function setupLoaderOverlay() {
-    if (loaderOverlay) return;
-    loaderOverlay = document.createElement('div');
-    loaderOverlay.id = 'loaderOverlay';
-    const loader = document.createElement('div');
-    loader.className = 'loader';
-    loaderOverlay.appendChild(loader);
-
-    const fragment = document.createDocumentFragment();
-    loaderDots = [];
-    for (let i = 0; i < LOADER_DOT_COUNT; i++) {
-        const dot = document.createElement('div');
-        dot.className = 'loader-dot';
-        fragment.appendChild(dot);
-        loaderDots.push(dot);
-    }
-    loader.appendChild(fragment);
-
-    document.body.appendChild(loaderOverlay);
-    loaderActive = true;
-    loaderTime = 0;
-    hasDrawnFrame = false;
-    animateLoader();
-}
-
-function animateLoader() {
-    if (!loaderActive || loaderDots.length === 0) return;
-
-    if (typeof noise === 'undefined') {
-        loaderTime += 0.01;
-        const dotCount = loaderDots.length;
-        for (let i = 0; i < dotCount; i++) {
-            const angle = (i / dotCount) * Math.PI * 2;
-            const wave1 = Math.sin(angle * 3 + loaderTime) * 15;
-            const wave2 = Math.cos(angle * 5 + loaderTime * 0.7) * 8;
-            const offset = wave1 + wave2;
-            const x = Math.cos(angle) * (LOADER_RADIUS + offset);
-            const y = Math.sin(angle) * (LOADER_RADIUS + offset);
-            loaderDots[i].style.transform = `translate(${x}px, ${y}px)`;
-        }
-    } else {
-        const noiseSpeed = 512;
-        npt += noiseSpeed / 100000;
-        nrt += noiseSpeed / 300000;
-        const rot = 5;
-        const noiseRotate = noise.perlin2(rot, nrt);
-        const dotCount = loaderDots.length;
-        const baseRadius = config.circleRadius;
-
-        for (let i = 0; i < dotCount; i++) {
-            const angle = -Math.PI / 2 + (2 * Math.PI * i) / dotCount + noiseRotate;
-            const xBase = Math.cos(angle) * baseRadius;
-            const yBase = Math.sin(angle) * baseRadius;
-            const offset = noise.simplex2(yBase / 100, npt) * 10;
-            const x = xBase + offset;
-            const y = yBase + offset;
-            loaderDots[i].style.transform = `translate(${x}px, ${y}px)`;
-        }
-    }
-    loaderFrame = requestAnimationFrame(animateLoader);
-}
-
 function hideLoaderOverlay() {
     if (!loaderOverlay) return;
-    loaderActive = false;
-    if (loaderFrame) {
-        cancelAnimationFrame(loaderFrame);
-        loaderFrame = null;
+    if (typeof window.stopLoaderAnimation === 'function') {
+        window.stopLoaderAnimation();
     }
     const overlay = loaderOverlay;
     overlay.classList.add('loader-hidden');
     loaderOverlay = null;
-    loaderDots = [];
     setTimeout(() => {
         if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     }, 300);
 }
 
 (function () {
-    setupLoaderOverlay();
+    loaderOverlay = document.getElementById('loaderOverlay');
+    if (loaderOverlay && typeof window.startLoaderAnimation === 'function') {
+        hasDrawnFrame = false;
+        window.startLoaderAnimation();
+    }
     window.onresize = function () {
         w = window.innerWidth;
         h = window.innerHeight;
@@ -823,18 +692,14 @@ function hideLoaderOverlay() {
         return;
     }
     detectPerformance();
-    if (veryLowEnd === true) {
-        if (canvas) canvas.style.display = 'none';
-        setupVeryLowEndUI();
-        hideLoaderOverlay();
-    } else if (lowEnd === true) {
+    if (lowEnd === true) {
         config.glow = 0;
         config.multiplier = 10;
         config.coef = 0.05;
         config.colorSpeed = 0;
     }
 
-    if (!veryLowEnd) {
+    if (canvas) {
         ctx = canvas.getContext("2d");
         w = ctx.canvas.width = window.innerWidth;
         h = ctx.canvas.height = window.innerHeight;

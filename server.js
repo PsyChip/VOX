@@ -231,7 +231,6 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
         system: system_prompt,
         firstMessage: randomGreeting,
     };
-    console.log("-- fetching signed URL..");
     try {
         const response = await fetch(
             `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${process.env.AGENT_ID}`,
@@ -250,7 +249,6 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
         const data = await response.json();
         payload.signedUrl = data.signed_url;
         res.json(payload);
-        console.log(payload);
     } catch (error) {
         console.error("Error:", error);
         res.status(500).json({ error: "Failed to get signed URL" });
