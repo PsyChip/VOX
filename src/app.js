@@ -47,11 +47,11 @@ let hasDrawnFrame = false;
 
 const config = {
     circleRadius: 80,
-    multiplier: 42,
+    multiplier: 45,
     colorSpeed: 10,
     hueStart: 0,
-    glow: 4,
-    coef: 0.09,
+    glow: 2,
+    coef: 0.1,
     smoothing: 0.55
 };
 
