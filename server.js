@@ -206,7 +206,7 @@ app.get("/api/signed-url/:dayPhase?", async (req, res) => {
         console.error(`System prompt for language '${lang}' not found at ${promptPath}.`);
         console.error("Set AGENT_LANGUAGE to a supported value or add the missing prompt file.");
         process.exit(1);
-    }
+    } ç
     var system_prompt = fs.readFileSync(promptPath, "utf8").trim().render(
         {
             date: today.day + " " + today.monthName + " " + today.year + ", " + today.dayName,
