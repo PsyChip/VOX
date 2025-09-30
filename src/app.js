@@ -22,8 +22,6 @@ let silenceTimer = null;
 let speechSamplesAboveThreshold = 0;
 let lastSpeechTimestamp = 0;
 let lowEnd = false;
-let temporaryOverdrive = false;
-let toolsConfig = null;
 
 let ctx = null;
 let w = window.innerWidth;
@@ -49,12 +47,12 @@ let hasDrawnFrame = false;
 
 const config = {
     circleRadius: 80,
-    multiplier: 40,
+    multiplier: 42,
     colorSpeed: 10,
     hueStart: 0,
-    glow: 6,
+    glow: 4,
     coef: 0.09,
-    smoothing: 0.6
+    smoothing: 0.55
 };
 
 const canvas = document.getElementById("canvas");
@@ -332,11 +330,9 @@ async function initializeTools() {
     }
 }
 
-
 async function startConversation() {
     try {
         const tools = await initializeTools();
-        toolsConfig = tools;
         console.log(tools);
         conversation = await Conversation.startSession({
             signedUrl: tools.signedUrl,
@@ -429,8 +425,8 @@ async function startConversation() {
 
         const wetGain = conversation.output.context.createGain();
         const dryGain = conversation.output.context.createGain();
-        wetGain.gain.value = temporaryOverdrive ? 0.5 : 0.3;
-        dryGain.gain.value = temporaryOverdrive ? 0.5 : 0.7;
+        wetGain.gain.value = 0.3;
+        dryGain.gain.value = 0.7;
 
         const masterGain = conversation.output.context.createGain();
         masterGain.gain.value = 1.0;
