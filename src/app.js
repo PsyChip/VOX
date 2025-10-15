@@ -3,7 +3,7 @@
 import { Conversation } from '@elevenlabs/client';
 
 //import { evaluate } from 'mathjs';
-import { evaluate } from 'mathjs/number';
+import { evaluate } from 'mathjs/es/evaluate.js';
 
 let conversation = null;
 
@@ -13,15 +13,14 @@ var _err = new sound("/static/sfx/VoiceError.ogg");
 var _talk = new sound("/static/sfx/talk.ogg");
 var _action = new sound("/static/sfx/action.ogg");
 var subtitle = document.getElementById("subtitle");
-var stimer;
 
 const SPEECH_THRESHOLD = 15;
 const SILENCE_THRESHOLD = 10;
 const MIN_SPEECH_SAMPLES = 5;
 const END_SENTENCE_PAUSE = 800;
 const TOUCH_UI_TIMEOUT = 5000; // Touch UI elements visibility timeout in milliseconds (5 seconds)
-const SUBTITLE_UNCHANGED_THRESHOLD = 3500; // Time to wait before fading (3 seconds)
-const SUBTITLE_FADE_DURATION = 1500; // Duration of fade out (2 seconds)
+const SUBTITLE_SENTENCE_DURATION = 1500; // Duration to show each sentence (1.5 seconds)
+const SUBTITLE_FADE_DURATION = 1500; // Duration of fade out (1.5 seconds)
 
 let connected = false;
 let isSpeaking = false;
@@ -46,6 +45,9 @@ let audioStream;
 let agentTalking = false;
 let lastSubtitleText = "";
 let lastSubtitleChangeTime = 0;
+let subtitleSentenceQueue = [];
+let subtitleCurrentIndex = 0;
+let subtitleTimer = null;
 let micName = "";
 let convolver;
 let impulse;
@@ -260,9 +262,11 @@ function isStereoMix(device) {
 }
 
 /**
- * Display subtitle with automatic fade-out logic:
- * - Show subtitle immediately when new message arrives
- * - If unchanged for 3 seconds, fade out over 2 seconds
+ * Display subtitle with sentence-by-sentence timing:
+ * - Split text into sentences using . ? ! delimiters
+ * - Show each sentence for 1500ms
+ * - Keep last sentence until agent finishes speaking
+ * - Fade out after 1500ms of speaking end
  */
 function showSubtitle(text) {
     if (!text || text.trim().length === 0) {
@@ -274,52 +278,116 @@ function showSubtitle(text) {
         return;
     }
 
-    // Check if text is wrapped in brackets [text]
-    const bracketMatch = text.match(/^\[(.*)\]$/);
-    if (bracketMatch) {
-        // Remove brackets and apply italic + light gray styling
-        subtitle.innerHTML = bracketMatch[1];
-        subtitle.style.fontStyle = "italic";
-        subtitle.style.color = "#999999";
-    } else {
-        // Normal text - white color, normal font style
-        subtitle.innerHTML = text;
-        subtitle.style.fontStyle = "normal";
-        subtitle.style.color = "#fff";
+    // Clear any existing timer
+    if (subtitleTimer) {
+        clearTimeout(subtitleTimer);
+        subtitleTimer = null;
     }
 
-    subtitle.style.opacity = "1";
-    subtitle.style.transition = "none";
+    // Check if text is wrapped in brackets [text]
+    let displayText = text;
+    let isItalic = false;
+    const bracketMatch = text.match(/^\[(.*)\]$/);
+    if (bracketMatch) {
+        displayText = bracketMatch[1];
+        isItalic = true;
+    }
 
-    // Track the change
-    lastSubtitleText = text;
-    lastSubtitleChangeTime = Date.now();
+    // Split text into sentences using . ? ! as delimiters
+    const sentences = displayText.split(/([.?!]+)/).filter(s => s.trim().length > 0);
 
+    // Reconstruct sentences with their punctuation
+    subtitleSentenceQueue = [];
+    let currentSentence = "";
+    for (let i = 0; i < sentences.length; i++) {
+        currentSentence += sentences[i];
+        // If this part ends with punctuation or it's the last part
+        if (/[.?!]+$/.test(sentences[i]) || i === sentences.length - 1) {
+            if (currentSentence.trim().length > 0) {
+                subtitleSentenceQueue.push(currentSentence.trim());
+            }
+            currentSentence = "";
+        }
+    }
+
+    // If no sentences were found, treat entire text as one sentence
+    if (subtitleSentenceQueue.length === 0) {
+        subtitleSentenceQueue = [displayText.trim()];
+    }
+
+    subtitleCurrentIndex = 0;
+
+    // Function to display the next sentence
+    function displayNextSentence() {
+        if (subtitleCurrentIndex >= subtitleSentenceQueue.length) {
+            return;
+        }
+
+        const sentence = subtitleSentenceQueue[subtitleCurrentIndex];
+        subtitle.innerHTML = sentence;
+
+        if (isItalic) {
+            subtitle.style.fontStyle = "italic";
+            subtitle.style.color = "#999999";
+        } else {
+            subtitle.style.fontStyle = "normal";
+            subtitle.style.color = "#fff";
+        }
+
+        subtitle.style.opacity = "1";
+        subtitle.style.transition = "none";
+
+        lastSubtitleText = sentence;
+        lastSubtitleChangeTime = Date.now();
+
+        subtitleCurrentIndex++;
+
+        // If this is not the last sentence, schedule next sentence display
+        if (subtitleCurrentIndex < subtitleSentenceQueue.length) {
+            subtitleTimer = setTimeout(displayNextSentence, SUBTITLE_SENTENCE_DURATION);
+        } else {
+            // This is the last sentence - wait for agent to finish speaking, then fade out
+            scheduleLastSentenceFadeout();
+        }
+    }
+
+    // Start displaying sentences
+    displayNextSentence();
+}
+
+/**
+ * Schedule fadeout for the last sentence after agent finishes speaking
+ */
+function scheduleLastSentenceFadeout() {
     // Clear any existing timer
-    clearTimeout(stimer);
+    if (subtitleTimer) {
+        clearTimeout(subtitleTimer);
+        subtitleTimer = null;
+    }
 
-    // Set timer to check if subtitle should fade out
-    stimer = setTimeout(function checkSubtitleFade() {
-        const now = Date.now();
-        const timeSinceLastChange = now - lastSubtitleChangeTime;
+    function checkAndFadeout() {
+        if (!agentTalking) {
+            // Agent finished speaking, wait 1500ms then fade out
+            subtitleTimer = setTimeout(() => {
+                subtitle.style.transition = `opacity ${SUBTITLE_FADE_DURATION / 1000}s ease-out`;
+                subtitle.style.opacity = "0";
 
-        // If text hasn't changed for 3 seconds, start fade out
-        if (timeSinceLastChange >= SUBTITLE_UNCHANGED_THRESHOLD) {
-            subtitle.style.transition = `opacity ${SUBTITLE_FADE_DURATION / 1000}s ease-out`;
-            subtitle.style.opacity = "0";
-
-            // Clear subtitle after fade completes
-            setTimeout(() => {
-                if (subtitle.style.opacity === "0") {
-                    subtitle.innerHTML = "";
-                }
+                // Clear subtitle after fade completes
+                setTimeout(() => {
+                    if (subtitle.style.opacity === "0") {
+                        subtitle.innerHTML = "";
+                        subtitleSentenceQueue = [];
+                        subtitleCurrentIndex = 0;
+                    }
+                }, SUBTITLE_FADE_DURATION);
             }, SUBTITLE_FADE_DURATION);
         } else {
-            // Check again after remaining time
-            const remainingTime = SUBTITLE_UNCHANGED_THRESHOLD - timeSinceLastChange;
-            stimer = setTimeout(checkSubtitleFade, remainingTime);
+            // Agent still speaking, check again in 100ms
+            subtitleTimer = setTimeout(checkAndFadeout, 100);
         }
-    }, SUBTITLE_UNCHANGED_THRESHOLD);
+    }
+
+    checkAndFadeout();
 }
 
 function detectPerformance() {
@@ -1280,6 +1348,148 @@ function handleTopic(topic) {
     }
 }
 
+function handleCodeExecution(tag) {
+    console.log("Code execution requested:", tag);
+
+    // Get code from content attribute (preferred) or text content (fallback)
+    const code = (tag.attr && tag.attr.content) || tag.text || '';
+
+    if (!code || code.trim().length === 0) {
+        console.error("No code provided for execution");
+        if (window.debugLog) window.debugLog('CODE: No code provided', 'system');
+        if (conversation) {
+            conversation.sendUserMessage('<system-reminder>Code execution failed: No code provided</system-reminder>');
+        }
+        return;
+    }
+
+    if (window.debugLog) window.debugLog(`CODE: Executing code (${code.length} chars)`, 'system');
+
+    let result;
+    let error = null;
+
+    try {
+        // Create an isolated execution context
+        // We'll use an IIFE to capture console output and return value
+        const isolatedCode = `
+            (function() {
+                const consoleLogs = [];
+                const originalConsoleLog = console.log;
+                const originalConsoleError = console.error;
+                const originalConsoleWarn = console.warn;
+
+                console.log = function(...args) {
+                    consoleLogs.push({type: 'log', args: args});
+                    originalConsoleLog.apply(console, args);
+                };
+                console.error = function(...args) {
+                    consoleLogs.push({type: 'error', args: args});
+                    originalConsoleError.apply(console, args);
+                };
+                console.warn = function(...args) {
+                    consoleLogs.push({type: 'warn', args: args});
+                    originalConsoleWarn.apply(console, args);
+                };
+
+                try {
+                    const result = (function() {
+                        ${code}
+                    })();
+
+                    console.log = originalConsoleLog;
+                    console.error = originalConsoleError;
+                    console.warn = originalConsoleWarn;
+
+                    return {
+                        success: true,
+                        result: result,
+                        logs: consoleLogs
+                    };
+                } catch (e) {
+                    console.log = originalConsoleLog;
+                    console.error = originalConsoleError;
+                    console.warn = originalConsoleWarn;
+
+                    return {
+                        success: false,
+                        error: e.message,
+                        stack: e.stack,
+                        logs: consoleLogs
+                    };
+                }
+            })()
+        `;
+
+        // Execute the isolated code
+        const executionResult = eval(isolatedCode);
+
+        if (executionResult.success) {
+            result = executionResult.result;
+
+            // Format the result
+            let resultStr = '';
+
+            if (executionResult.logs.length > 0) {
+                resultStr += 'Console output:\n';
+                executionResult.logs.forEach(log => {
+                    const args = log.args.map(arg => {
+                        if (typeof arg === 'object') {
+                            try {
+                                return JSON.stringify(arg);
+                            } catch (e) {
+                                return String(arg);
+                            }
+                        }
+                        return String(arg);
+                    }).join(' ');
+                    resultStr += `[${log.type}] ${args}\n`;
+                });
+                resultStr += '\n';
+            }
+
+            if (result !== undefined) {
+                resultStr += 'Return value: ';
+                if (typeof result === 'object') {
+                    try {
+                        resultStr += JSON.stringify(result, null, 2);
+                    } catch (e) {
+                        resultStr += String(result);
+                    }
+                } else {
+                    resultStr += String(result);
+                }
+            } else {
+                resultStr += 'Code executed successfully (no return value)';
+            }
+
+            console.log('Code execution result:', resultStr);
+            if (window.debugLog) window.debugLog(`CODE: Execution successful`, 'system');
+
+            if (conversation) {
+                conversation.sendUserMessage(`<system-reminder>here is the result of code tool:\n${resultStr}</system-reminder>`);
+            }
+        } else {
+            error = executionResult.error;
+            const errorMsg = `Code execution error: ${error}`;
+            console.error(errorMsg);
+            if (window.debugLog) window.debugLog(`CODE: Execution failed - ${error}`, 'system');
+
+            if (conversation) {
+                conversation.sendUserMessage(`<system-reminder>here is the result of code tool: Error - ${error}</system-reminder>`);
+            }
+        }
+    } catch (e) {
+        error = e.message;
+        const errorMsg = `Code execution error: ${error}`;
+        console.error(errorMsg, e);
+        if (window.debugLog) window.debugLog(`CODE: Execution failed - ${error}`, 'system');
+
+        if (conversation) {
+            conversation.sendUserMessage(`<system-reminder>here is the result of code tool: Error - ${error}</system-reminder>`);
+        }
+    }
+}
+
 function updateTopicDisplay(title, tags) {
     const topicTitle = document.getElementById('topicTitle');
     const topicTags = document.getElementById('topicTags');
@@ -1685,7 +1895,37 @@ async function startConversation() {
                     if (m.message.indexOf("<") > -1 && m.message.indexOf(">") > -1) {
                         switch (m.message.trim()) {
                             case '<silence/>':
-                                // Agent indicating no meaningful input detected - just return silently
+                                // Agent indicating no meaningful input detected
+                                // Mute output for 100ms if agent is not currently speaking
+                                if (!agentTalking) {
+                                    if (masterGainNode && masterGainNode.gain) {
+                                        const currentValue = masterGainNode.gain.value;
+                                        const restoreValue = currentValue === 0 && typeof masterGainStoredValue === 'number'
+                                            ? masterGainStoredValue
+                                            : currentValue;
+
+                                        masterGainStoredValue = restoreValue;
+
+                                        if (masterGainRestoreTimer) {
+                                            clearTimeout(masterGainRestoreTimer);
+                                            masterGainRestoreTimer = null;
+                                        }
+
+                                        masterGainNode.gain.setValueAtTime(0, masterGainNode.context.currentTime);
+
+                                        masterGainRestoreTimer = setTimeout(() => {
+                                            if (masterGainNode && masterGainNode.gain) {
+                                                const valueToRestore = typeof masterGainStoredValue === 'number' ? masterGainStoredValue : 1;
+                                                masterGainNode.gain.setValueAtTime(valueToRestore, masterGainNode.context.currentTime);
+                                            }
+                                            masterGainRestoreTimer = null;
+                                        }, 100);
+
+                                        if (window.debugLog) window.debugLog('SILENCE: Muted output for 100ms', 'system');
+                                    }
+                                } else {
+                                    if (window.debugLog) window.debugLog('SILENCE: Agent speaking, skip mute', 'system');
+                                }
                                 return;
                         }
 
@@ -1747,6 +1987,9 @@ async function startConversation() {
                                         setTimeout(function () {
                                             location.reload();
                                         }, 2500);
+                                        break;
+                                    case "code":
+                                        handleCodeExecution(tag);
                                         break;
                                     /*
                                     that logic is handled by sub agents now
