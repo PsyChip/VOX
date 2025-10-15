@@ -1,0 +1,302 @@
+{
+    "US": {
+        "country": "United States",
+        "currency_code": "USD",
+        "currency_name": "United States Dollar",
+        "symbol": "$"
+    },
+    "CA": {
+        "country": "Canada",
+        "currency_code": "CAD",
+        "currency_name": "Canadian Dollar",
+        "symbol": "$"
+    },
+    "MX": {
+        "country": "Mexico",
+        "currency_code": "MXN",
+        "currency_name": "Mexican Peso",
+        "symbol": "$"
+    },
+    "BR": {
+        "country": "Brazil",
+        "currency_code": "BRL",
+        "currency_name": "Brazilian Real",
+        "symbol": "R$"
+    },
+    "AR": {
+        "country": "Argentina",
+        "currency_code": "ARS",
+        "currency_name": "Argentine Peso",
+        "symbol": "$"
+    },
+    "CL": {
+        "country": "Chile",
+        "currency_code": "CLP",
+        "currency_name": "Chilean Peso",
+        "symbol": "$"
+    },
+    "CO": {
+        "country": "Colombia",
+        "currency_code": "COP",
+        "currency_name": "Colombian Peso",
+        "symbol": "$"
+    },
+    "PE": {
+        "country": "Peru",
+        "currency_code": "PEN",
+        "currency_name": "Peruvian Sol",
+        "symbol": "S/"
+    },
+    "VE": {
+        "country": "Venezuela",
+        "currency_code": "VES",
+        "currency_name": "Venezuelan Bolívar",
+        "symbol": "Bs"
+    },
+    "GB": {
+        "country": "United Kingdom",
+        "currency_code": "GBP",
+        "currency_name": "Pound Sterling",
+        "symbol": "£"
+    },
+    "IE": {
+        "country": "Ireland",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "DE": {
+        "country": "Germany",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "FR": {
+        "country": "France",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "IT": {
+        "country": "Italy",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "ES": {
+        "country": "Spain",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "NL": {
+        "country": "Netherlands",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "PT": {
+        "country": "Portugal",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "BE": {
+        "country": "Belgium",
+        "currency_code": "EUR",
+        "currency_name": "Euro",
+        "symbol": "€"
+    },
+    "SE": {
+        "country": "Sweden",
+        "currency_code": "SEK",
+        "currency_name": "Swedish Krona",
+        "symbol": "kr"
+    },
+    "NO": {
+        "country": "Norway",
+        "currency_code": "NOK",
+        "currency_name": "Norwegian Krone",
+        "symbol": "kr"
+    },
+    "DK": {
+        "country": "Denmark",
+        "currency_code": "DKK",
+        "currency_name": "Danish Krone",
+        "symbol": "kr"
+    },
+    "CH": {
+        "country": "Switzerland",
+        "currency_code": "CHF",
+        "currency_name": "Swiss Franc",
+        "symbol": "CHF"
+    },
+    "PL": {
+        "country": "Poland",
+        "currency_code": "PLN",
+        "currency_name": "Polish Złoty",
+        "symbol": "zł"
+    },
+    "CZ": {
+        "country": "Czech Republic",
+        "currency_code": "CZK",
+        "currency_name": "Czech Koruna",
+        "symbol": "Kč"
+    },
+    "HU": {
+        "country": "Hungary",
+        "currency_code": "HUF",
+        "currency_name": "Hungarian Forint",
+        "symbol": "Ft"
+    },
+    "RU": {
+        "country": "Russia",
+        "currency_code": "RUB",
+        "currency_name": "Russian Ruble",
+        "symbol": "₽"
+    },
+    "TR": {
+        "country": "Turkey",
+        "currency_code": "TRY",
+        "currency_name": "Turkish Lira",
+        "symbol": "₺"
+    },
+    "SA": {
+        "country": "Saudi Arabia",
+        "currency_code": "SAR",
+        "currency_name": "Saudi Riyal",
+        "symbol": "﷼"
+    },
+    "AE": {
+        "country": "United Arab Emirates",
+        "currency_code": "AED",
+        "currency_name": "UAE Dirham",
+        "symbol": "د.إ"
+    },
+    "IL": {
+        "country": "Israel",
+        "currency_code": "ILS",
+        "currency_name": "Israeli New Shekel",
+        "symbol": "₪"
+    },
+    "EG": {
+        "country": "Egypt",
+        "currency_code": "EGP",
+        "currency_name": "Egyptian Pound",
+        "symbol": "£"
+    },
+    "NG": {
+        "country": "Nigeria",
+        "currency_code": "NGN",
+        "currency_name": "Nigerian Naira",
+        "symbol": "₦"
+    },
+    "ZA": {
+        "country": "South Africa",
+        "currency_code": "ZAR",
+        "currency_name": "South African Rand",
+        "symbol": "R"
+    },
+    "KE": {
+        "country": "Kenya",
+        "currency_code": "KES",
+        "currency_name": "Kenyan Shilling",
+        "symbol": "Sh"
+    },
+    "IN": {
+        "country": "India",
+        "currency_code": "INR",
+        "currency_name": "Indian Rupee",
+        "symbol": "₹"
+    },
+    "PK": {
+        "country": "Pakistan",
+        "currency_code": "PKR",
+        "currency_name": "Pakistani Rupee",
+        "symbol": "₨"
+    },
+    "BD": {
+        "country": "Bangladesh",
+        "currency_code": "BDT",
+        "currency_name": "Bangladeshi Taka",
+        "symbol": "৳"
+    },
+    "CN": {
+        "country": "China",
+        "currency_code": "CNY",
+        "currency_name": "Chinese Yuan",
+        "symbol": "¥"
+    },
+    "JP": {
+        "country": "Japan",
+        "currency_code": "JPY",
+        "currency_name": "Japanese Yen",
+        "symbol": "¥"
+    },
+    "KR": {
+        "country": "South Korea",
+        "currency_code": "KRW",
+        "currency_name": "South Korean Won",
+        "symbol": "₩"
+    },
+    "SG": {
+        "country": "Singapore",
+        "currency_code": "SGD",
+        "currency_name": "Singapore Dollar",
+        "symbol": "$"
+    },
+    "HK": {
+        "country": "Hong Kong",
+        "currency_code": "HKD",
+        "currency_name": "Hong Kong Dollar",
+        "symbol": "HK$"
+    },
+    "TW": {
+        "country": "Taiwan",
+        "currency_code": "TWD",
+        "currency_name": "New Taiwan Dollar",
+        "symbol": "NT$"
+    },
+    "TH": {
+        "country": "Thailand",
+        "currency_code": "THB",
+        "currency_name": "Thai Baht",
+        "symbol": "฿"
+    },
+    "MY": {
+        "country": "Malaysia",
+        "currency_code": "MYR",
+        "currency_name": "Malaysian Ringgit",
+        "symbol": "RM"
+    },
+    "ID": {
+        "country": "Indonesia",
+        "currency_code": "IDR",
+        "currency_name": "Indonesian Rupiah",
+        "symbol": "Rp"
+    },
+    "VN": {
+        "country": "Vietnam",
+        "currency_code": "VND",
+        "currency_name": "Vietnamese Dong",
+        "symbol": "₫"
+    },
+    "AU": {
+        "country": "Australia",
+        "currency_code": "AUD",
+        "currency_name": "Australian Dollar",
+        "symbol": "$"
+    },
+    "NZ": {
+        "country": "New Zealand",
+        "currency_code": "NZD",
+        "currency_name": "New Zealand Dollar",
+        "symbol": "$"
+    },
+    "PH": {
+        "country": "Philippines",
+        "currency_code": "PHP",
+        "currency_name": "Philippine Peso",
+        "symbol": "₱"
+    }
+}

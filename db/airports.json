@@ -1,0 +1,518 @@
+{
+  "Istanbul": [
+    "IST",
+    "SAW"
+  ],
+  "Berlin": [
+    "BER"
+  ],
+  "London": [
+    "LHR",
+    "LGW",
+    "STN"
+  ],
+  "Paris": [
+    "CDG",
+    "ORY"
+  ],
+  "New York": [
+    "JFK",
+    "LGA",
+    "EWR"
+  ],
+  "Tokyo": [
+    "NRT",
+    "HND"
+  ],
+  "Dubai": [
+    "DXB"
+  ],
+  "Los Angeles": [
+    "LAX"
+  ],
+  "Frankfurt": [
+    "FRA"
+  ],
+  "Amsterdam": [
+    "AMS"
+  ],
+  "Madrid": [
+    "MAD"
+  ],
+  "Barcelona": [
+    "BCN"
+  ],
+  "Rome": [
+    "FCO",
+    "CIA"
+  ],
+  "Milan": [
+    "MXP",
+    "LIN"
+  ],
+  "Munich": [
+    "MUC"
+  ],
+  "Vienna": [
+    "VIE"
+  ],
+  "Zurich": [
+    "ZRH"
+  ],
+  "Athens": [
+    "ATH"
+  ],
+  "Prague": [
+    "PRG"
+  ],
+  "Budapest": [
+    "BUD"
+  ],
+  "Warsaw": [
+    "WAW"
+  ],
+  "Copenhagen": [
+    "CPH"
+  ],
+  "Stockholm": [
+    "ARN"
+  ],
+  "Oslo": [
+    "OSL"
+  ],
+  "Helsinki": [
+    "HEL"
+  ],
+  "Moscow": [
+    "SVO",
+    "DME"
+  ],
+  "St Petersburg": [
+    "LED"
+  ],
+  "Abu Dhabi": [
+    "AUH"
+  ],
+  "Doha": [
+    "DOH"
+  ],
+  "Riyadh": [
+    "RUH"
+  ],
+  "Jeddah": [
+    "JED"
+  ],
+  "Cairo": [
+    "CAI"
+  ],
+  "Tel Aviv": [
+    "TLV"
+  ],
+  "Ankara": [
+    "ESB"
+  ],
+  "Izmir": [
+    "ADB"
+  ],
+  "Antalya": [
+    "AYT"
+  ],
+  "Bodrum": [
+    "BJV"
+  ],
+  "Dalaman": [
+    "DLM"
+  ],
+  "Bangkok": [
+    "BKK"
+  ],
+  "Singapore": [
+    "SIN"
+  ],
+  "Hong Kong": [
+    "HKG"
+  ],
+  "Seoul": [
+    "ICN"
+  ],
+  "Beijing": [
+    "PEK"
+  ],
+  "Shanghai": [
+    "PVG"
+  ],
+  "Mumbai": [
+    "BOM"
+  ],
+  "Delhi": [
+    "DEL"
+  ],
+  "Bangalore": [
+    "BLR"
+  ],
+  "Karachi": [
+    "KHI"
+  ],
+  "Islamabad": [
+    "ISB"
+  ],
+  "Sydney": [
+    "SYD"
+  ],
+  "Melbourne": [
+    "MEL"
+  ],
+  "Brisbane": [
+    "BNE"
+  ],
+  "Auckland": [
+    "AKL"
+  ],
+  "Toronto": [
+    "YYZ"
+  ],
+  "Vancouver": [
+    "YVR"
+  ],
+  "Montreal": [
+    "YUL"
+  ],
+  "Chicago": [
+    "ORD"
+  ],
+  "San Francisco": [
+    "SFO"
+  ],
+  "Boston": [
+    "BOS"
+  ],
+  "Miami": [
+    "MIA"
+  ],
+  "Las Vegas": [
+    "LAS"
+  ],
+  "Seattle": [
+    "SEA"
+  ],
+  "Washington": [
+    "IAD",
+    "DCA"
+  ],
+  "Atlanta": [
+    "ATL"
+  ],
+  "Dallas": [
+    "DFW"
+  ],
+  "Houston": [
+    "IAH"
+  ],
+  "Philadelphia": [
+    "PHL"
+  ],
+  "Phoenix": [
+    "PHX"
+  ],
+  "Denver": [
+    "DEN"
+  ],
+  "Orlando": [
+    "MCO"
+  ],
+  "Mexico City": [
+    "MEX"
+  ],
+  "São Paulo": [
+    "GRU"
+  ],
+  "Rio de Janeiro": [
+    "GIG"
+  ],
+  "Buenos Aires": [
+    "EZE"
+  ],
+  "Lima": [
+    "LIM"
+  ],
+  "Bogotá": [
+    "BOG"
+  ],
+  "Santiago": [
+    "SCL"
+  ],
+  "Johannesburg": [
+    "JNB"
+  ],
+  "Cape Town": [
+    "CPT"
+  ],
+  "Nairobi": [
+    "NBO"
+  ],
+  "Casablanca": [
+    "CMN"
+  ],
+  "Tunis": [
+    "TUN"
+  ],
+  "Algiers": [
+    "ALG"
+  ],
+  "Lagos": [
+    "LOS"
+  ],
+  "Addis Ababa": [
+    "ADD"
+  ],
+  "Lisbon": [
+    "LIS"
+  ],
+  "Porto": [
+    "OPO"
+  ],
+  "Brussels": [
+    "BRU"
+  ],
+  "Dublin": [
+    "DUB"
+  ],
+  "Edinburgh": [
+    "EDI"
+  ],
+  "Manchester": [
+    "MAN"
+  ],
+  "Birmingham": [
+    "BHX"
+  ],
+  "Glasgow": [
+    "GLA"
+  ],
+  "Nice": [
+    "NCE"
+  ],
+  "Lyon": [
+    "LYS"
+  ],
+  "Marseille": [
+    "MRS"
+  ],
+  "Hamburg": [
+    "HAM"
+  ],
+  "Cologne": [
+    "CGN"
+  ],
+  "Düsseldorf": [
+    "DUS"
+  ],
+  "Stuttgart": [
+    "STR"
+  ],
+  "Hannover": [
+    "HAJ"
+  ],
+  "Leipzig": [
+    "LEJ"
+  ],
+  "Dresden": [
+    "DRS"
+  ],
+  "Nuremberg": [
+    "NUE"
+  ],
+  "Bremen": [
+    "BRE"
+  ],
+  "Dortmund": [
+    "DTM"
+  ],
+  "Geneva": [
+    "GVA"
+  ],
+  "Basel": [
+    "BSL"
+  ],
+  "Salzburg": [
+    "SZG"
+  ],
+  "Innsbruck": [
+    "INN"
+  ],
+  "Graz": [
+    "GRZ"
+  ],
+  "Venice": [
+    "VCE"
+  ],
+  "Florence": [
+    "FLR"
+  ],
+  "Naples": [
+    "NAP"
+  ],
+  "Bologna": [
+    "BLQ"
+  ],
+  "Palermo": [
+    "PMO"
+  ],
+  "Catania": [
+    "CTA"
+  ],
+  "Pisa": [
+    "PSA"
+  ],
+  "Verona": [
+    "VRN"
+  ],
+  "Bari": [
+    "BRI"
+  ],
+  "Seville": [
+    "SVQ"
+  ],
+  "Valencia": [
+    "VLC"
+  ],
+  "Bilbao": [
+    "BIO"
+  ],
+  "Malaga": [
+    "AGP"
+  ],
+  "Alicante": [
+    "ALC"
+  ],
+  "Palma de Mallorca": [
+    "PMI"
+  ],
+  "Ibiza": [
+    "IBZ"
+  ],
+  "Tenerife": [
+    "TFN",
+    "TFS"
+  ],
+  "Gran Canaria": [
+    "LPA"
+  ],
+  "Larnaca": [
+    "LCA"
+  ],
+  "Paphos": [
+    "PFO"
+  ],
+  "Thessaloniki": [
+    "SKG"
+  ],
+  "Heraklion": [
+    "HER"
+  ],
+  "Rhodes": [
+    "RHO"
+  ],
+  "Corfu": [
+    "CFU"
+  ],
+  "Santorini": [
+    "JTR"
+  ],
+  "Mykonos": [
+    "JMK"
+  ],
+  "Bucharest": [
+    "OTP"
+  ],
+  "Sofia": [
+    "SOF"
+  ],
+  "Belgrade": [
+    "BEG"
+  ],
+  "Zagreb": [
+    "ZAG"
+  ],
+  "Ljubljana": [
+    "LJU"
+  ],
+  "Sarajevo": [
+    "SJJ"
+  ],
+  "Skopje": [
+    "SKP"
+  ],
+  "Tirana": [
+    "TIA"
+  ],
+  "Podgorica": [
+    "TGD"
+  ],
+  "Pristina": [
+    "PRN"
+  ],
+  "Bratislava": [
+    "BTS"
+  ],
+  "Krakow": [
+    "KRK"
+  ],
+  "Gdansk": [
+    "GDN"
+  ],
+  "Wroclaw": [
+    "WRO"
+  ],
+  "Poznan": [
+    "POZ"
+  ],
+  "Vilnius": [
+    "VNO"
+  ],
+  "Riga": [
+    "RIX"
+  ],
+  "Tallinn": [
+    "TLL"
+  ],
+  "Minsk": [
+    "MSQ"
+  ],
+  "Kiev": [
+    "KBP"
+  ],
+  "Odessa": [
+    "ODS"
+  ],
+  "Lviv": [
+    "LWO"
+  ],
+  "Tbilisi": [
+    "TBS"
+  ],
+  "Yerevan": [
+    "EVN"
+  ],
+  "Baku": [
+    "GYD"
+  ],
+  "Almaty": [
+    "ALA"
+  ],
+  "Tashkent": [
+    "TAS"
+  ],
+  "Bishkek": [
+    "FRU"
+  ],
+  "Astana": [
+    "NQZ"
+  ],
+  "Ashgabat": [
+    "ASB"
+  ],
+  "Dushanbe": [
+    "DYU"
+  ]
+}

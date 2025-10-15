@@ -1,0 +1,39 @@
+{
+  "serpapi": {
+    "image_search": "https://serpapi.com/search?api_key={{SERPAPI_KEY}}&q={{query}}&engine=google_images&ijn=0",
+    "web_search": "https://serpapi.com/search?api_key={{SERPAPI_KEY}}&engine=google&q={{query}}",
+    "news_search": "https://serpapi.com/search?api_key={{SERPAPI_KEY}}&engine=google_news_light&google_domain=google.com&q={{query}}&hl={{language}}&gl={{country}}&safe=off&filter=0&nfpr=1",
+    "events_search": "https://serpapi.com/search?api_key={{SERPAPI_KEY}}&engine=google_events&q={{city}}"
+  },
+  "openweather": {
+    "current_weather": "https://api.openweathermap.org/data/2.5/weather?q={{location}}&appid={{OPENWEATHER_KEY}}&units=metric"
+  },
+  "openexchangerates": {
+    "latest": "https://openexchangerates.org/api/latest.json?app_id={{OPENEXCHANGERATES_KEY}}"
+  },
+  "altinkaynak": {
+    "currency": "https://rest.altinkaynak.com/Currency.json"
+  },
+  "google_places": {
+    "text_search": "https://maps.googleapis.com/maps/api/place/textsearch/json?location={{lat}},{{lon}}&radius={{radius}}&query={{query}}&key={{GPLACES_KEY}}"
+  },
+  "elevenlabs": {
+    "signed_url": "https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id={{AGENT_ID}}"
+  },
+  "emsc": {
+    "earthquakes": "https://www.seismicportal.eu/fdsnws/event/1/query?orderby=time&limit=10&lat={{lat}}&lon={{lon}}&minradius=1&maxradius=18&format=json&minmag=1.0"
+  },
+  "usgs": {
+    "earthquakes": "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&orderby=time&limit=10&latitude={{lat}}&longitude={{lon}}&maxradiuskm=2000&minmagnitude=1.0"
+  },
+  "google_maps": {
+    "reverse_geocode": "https://maps.googleapis.com/maps/api/geocode/json?latlng={{lat}},{{lon}}&key={{GPLACES_KEY}}"
+  },
+  "opensky": {
+    "aircraft_states": "https://opensky-network.org/api/states/all?lamin={{lamin}}&lamax={{lamax}}&lomin={{lomin}}&lomax={{lomax}}"
+  },
+  "serpapi_flights": {
+    "iata_search": "https://serpapi.com/search?engine=google&q={{query}}&api_key={{SERPAPI_KEY}}",
+    "flight_search": "https://serpapi.com/search?engine=google_flights&departure_id={{departure_id}}&arrival_id={{arrival_id}}&outbound_date={{outbound_date}}&currency={{currency}}&stops={{stops}}&type={{type}}&api_key={{SERPAPI_KEY}}"
+  }
+}

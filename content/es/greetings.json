@@ -1,0 +1,132 @@
+{
+    "resume": [
+        "Parece que se cayó la conexión; hablábamos de {{topic}}.",
+        "De vuelta: estábamos con {{topic}}.",
+        "Perdón; lo último que dijiste fue sobre {{topic}}.",
+        "Seguimos donde lo dejamos: {{topic}}."
+    ],
+    "firstTime": [
+        "Hola, soy Escobar. ¿Cómo te llamas?",
+        "Hola, soy Escobar. ¿Cómo quieres que te llame?",
+        "Hola, soy Escobar. ¿Cómo prefieres que me dirija a ti?",
+        "Hola, soy Escobar. ¿Cuál es tu nombre?",
+        "Saludos, soy Escobar. ¿Cómo te gustaría que te llame?",
+        "Hola, soy Escobar. ¿Tienes algún nombre o apodo que prefieras?"
+    ],
+    "anonymous": {
+        "morning": [
+            "Buenos días; a quien madruga, Dios le ayuda.",
+            "No por mucho madrugar amanece más temprano.",
+            "Buenos días; lo que bien empieza, bien acaba.",
+            "Mañana de niebla, tarde de paseo.",
+            "El mundo es de los que se levantan temprano.",
+            "Buenos días; cada día trae su afán.",
+            "Buenos días; hoy es el primer día del resto de tu vida.",
+            "Amanece, que no es poco.",
+            "Buenos días; a cada día le basta su afán.",
+            "Buenos días; al mal tiempo, buena cara.",
+            "Buenos días; más vale paso que dure y no trote que canse.",
+            "Buenos días; a falta de pan, buenas son tortas."
+        ],
+        "day": [
+            "Hola; no dejes para mañana lo que puedes hacer hoy.",
+            "El que algo quiere, algo le cuesta.",
+            "A buen entendedor, pocas palabras bastan.",
+            "Más vale tarde que nunca.",
+            "El tiempo es oro.",
+            "El que persevera, alcanza.",
+            "Camarón que se duerme, se lo lleva la corriente.",
+            "El que mucho abarca, poco aprieta.",
+            "Roma no se hizo en un día.",
+            "Vísteme despacio, que tengo prisa.",
+            "Quien no arriesga, no gana.",
+            "Poco a poco se anda lejos."
+        ],
+        "evening": [
+            "Buenas tardes; bien está lo que bien acaba.",
+            "La tarde corona el día.",
+            "Tras la jornada, buen descanso.",
+            "Después de la tempestad viene la calma.",
+            "Al mal tiempo, buena cara.",
+            "Cielo rojo al atardecer, buen tiempo va a traer.",
+            "Cada día trae su afán.",
+            "Obras son amores y no buenas razones.",
+            "Mañana será otro día.",
+            "El que ríe último, ríe mejor.",
+            "Buenas tardes; descanso merecido.",
+            "Que tengas una buena tarde."
+        ],
+        "night": [
+            "Buenas noches; la noche es madre del consejo.",
+            "En la noche todos los gatos son pardos.",
+            "A la cama no te irás sin saber una cosa más.",
+            "La noche es más oscura antes del amanecer.",
+            "Silencio y calma, la mente se aclara.",
+            "Tras la noche, viene el día.",
+            "Sueña bien; mañana será otro día.",
+            "Las estrellas brillan más en la oscuridad.",
+            "La noche enseña en silencio lo que el día no dice.",
+            "Buenas noches; que descanses y repongas fuerzas.",
+            "No hay mal que por bien no venga.",
+            "La noche pertenece a los valientes."
+        ]
+    },
+    "known": {
+        "morning": [
+            "Buenos días {{name}}; a quien madruga, Dios le ayuda.",
+            "{{name}}, no por mucho madrugar amanece más temprano.",
+            "Buenos días {{name}}; lo que bien empieza, bien acaba.",
+            "{{name}}, mañana de niebla, tarde de paseo.",
+            "Buenos días {{name}}; el mundo es de los que se levantan temprano.",
+            "{{name}}, cada día trae su afán.",
+            "Buenos días {{name}}; hoy es el primer día del resto de tu vida.",
+            "{{name}}, amanece, que no es poco.",
+            "Buenos días {{name}}; a cada día le basta su afán.",
+            "{{name}}, al mal tiempo, buena cara.",
+            "Buenos días {{name}}; más vale paso que dure y no trote que canse.",
+            "{{name}}, a falta de pan, buenas son tortas."
+        ],
+        "day": [
+            "Hola {{name}}; no dejes para mañana lo que puedes hacer hoy.",
+            "{{name}}, el que algo quiere, algo le cuesta.",
+            "{{name}}, a buen entendedor, pocas palabras bastan.",
+            "{{name}}, más vale tarde que nunca.",
+            "Hola {{name}}; el tiempo es oro.",
+            "{{name}}, el que persevera, alcanza.",
+            "{{name}}, camarón que se duerme, se lo lleva la corriente.",
+            "{{name}}, el que mucho abarca, poco aprieta.",
+            "{{name}}, Roma no se hizo en un día.",
+            "{{name}}, vísteme despacio, que tengo prisa.",
+            "{{name}}, quien no arriesga, no gana.",
+            "{{name}}, poco a poco se anda lejos."
+        ],
+        "evening": [
+            "Buenas tardes {{name}}; bien está lo que bien acaba.",
+            "{{name}}, la tarde corona el día.",
+            "Buenas tardes {{name}}; tras la jornada, buen descanso.",
+            "{{name}}, después de la tempestad viene la calma.",
+            "Buenas tardes {{name}}; al mal tiempo, buena cara.",
+            "{{name}}, cielo rojo al atardecer, buen tiempo va a traer.",
+            "Buenas tardes {{name}}; cada día trae su afán.",
+            "{{name}}, obras son amores y no buenas razones.",
+            "Buenas tardes {{name}}; mañana será otro día.",
+            "{{name}}, el que ríe último, ríe mejor.",
+            "Buenas tardes {{name}}; descanso merecido.",
+            "{{name}}, que tengas una buena tarde."
+        ],
+        "night": [
+            "Buenas noches {{name}}; la noche es madre del consejo.",
+            "{{name}}, en la noche todos los gatos son pardos.",
+            "Buenas noches {{name}}; a la cama no te irás sin saber una cosa más.",
+            "{{name}}, la noche es más oscura antes del amanecer.",
+            "Buenas noches {{name}}; silencio y calma, la mente se aclara.",
+            "{{name}}, tras la noche, viene el día.",
+            "Buenas noches {{name}}; sueña bien, mañana será otro día.",
+            "{{name}}, las estrellas brillan más en la oscuridad.",
+            "Buenas noches {{name}}; la noche enseña en silencio lo que el día no dice.",
+            "{{name}}, no hay mal que por bien no venga.",
+            "Buenas noches {{name}}; que descanses y repongas fuerzas.",
+            "{{name}}, la noche pertenece a los valientes."
+        ]
+    }
+}

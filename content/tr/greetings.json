@@ -1,0 +1,101 @@
+{
+    "resume": [
+        "Görünüşe göre bağlantı koptu; {{topic}} konuşuyorduk.",
+        "Tekrar buradayım; {{topic}} üzerine konuşuyorduk.",
+        "Afedersin, en son {{topic}} demiştin.",
+        "{{topic}} üzerine sohbetimiz yarım kaldı."
+    ],
+    "firstTime": [
+        "Merhaba, ben Gandalf. Adın ne?",
+        "Selam, ben Gandalf. Sana nasıl hitap edeyim?",
+        "Merhaba, ben Gandalf. Seni nasıl çağırayım?",
+        "Selam, ben Gandalf. İsmin nedir?",
+        "Merhaba, ben Gandalf. Nasıl hitap etmemi istersin?",
+        "Selamlar, ben Gandalf. Adın nedir?"
+    ],
+    "anonymous": {
+        "morning": [
+            "Günaydın; erken kalkan yol alır.",
+            "Günaydın; sabahın bereketi başkadır.",
+            "Günaydın! Güneş erken kalkana doğar."
+        ],
+        "day": [
+            "Anlat, dinliyorum.",
+            "Dinlemedeyim.",
+            "Merhaba",
+            "Selam",
+            "Evet, dinliyorum."
+        ],
+        "evening": [
+            "Akşam oldu; gün bitti, iş bitmedi.",
+            "Gün batarken dertler de iner.",
+            "İyi akşamlar; Nasıl yardımcı olabilirim?",
+            "Hayırlı akşamlar. nasıl yardımcı olabilirim?"
+        ],
+        "night": [
+            "Gece, düşüncenin dostudur.",
+            "Karanlığın en koyusu şafağa yakındır.",
+            "Daha mesai bitmedimi?",
+            "Yıldızlar karanlıkta parlar.",
+            "Dinlenmek de iştir; vakit nakittir."
+        ]
+    },
+    "known": {
+        "morning": [
+            "Günaydın {{name}}; erken kalkan yol alır.",
+            "{{name}}, gün doğmadan neler doğar.",
+            "Günaydın {{name}}; sabah ola hayrola.",
+            "{{name}}, gün sabahından bellidir.",
+            "Günaydın {{name}}; sabahın bereketi başkadır.",
+            "{{name}}, sabahın seherinde hayır vardır.",
+            "Günaydın {{name}}; başlamak bitirmenin yarısıdır.",
+            "{{name}}, güneş erken kalkana doğar.",
+            "Günaydın {{name}}; yeni gün, yeni niyet.",
+            "{{name}}, hayırlı sabahlar; hayırla başlayalım.",
+            "Günaydın {{name}}; bereketli olsun.",
+            "{{name}}, güne bereketle başla."
+        ],
+        "day": [
+            "Selam {{name}}; bugünün işini yarına bırakma.",
+            "{{name}}, işleyen demir pas tutmaz.",
+            "{{name}}, damlaya damlaya göl olur.",
+            "{{name}}, acele işe şeytan karışır.",
+            "İyi günler {{name}}; emek olmadan yemek olmaz.",
+            "{{name}}, gülü seven dikenine katlanır.",
+            "{{name}}, vakit nakittir.",
+            "{{name}}, azimle sıçan duvarı deler.",
+            "{{name}}, ne ekersen onu biçersin.",
+            "{{name}}, akıl akıldan üstündür.",
+            "{{name}}, sabreden derviş muradına ermiş.",
+            "{{name}}, doğru söyleyeni dokuz köyden kovarlar."
+        ],
+        "evening": [
+            "Akşam ola hayrola {{name}}.",
+            "{{name}}, akşam oldu; gün bitti, iş bitmedi.",
+            "{{name}}, günün işi gününde biter.",
+            "İyi akşamlar {{name}}; yorgun baş yastık ister.",
+            "{{name}}, akşamın serinliği yorgunluğu alır.",
+            "İyi akşamlar {{name}}; muhasebe vaktidir.",
+            "{{name}}, akşamın bereketi ayrı.",
+            "Hayırlı akşamlar {{name}}; huzur olsun.",
+            "{{name}}, gün batarken dertler de iner.",
+            "{{name}}, akşamdan kalan iş, sabaha kalmasın.",
+            "İyi akşamlar {{name}}; çayı demle, muhabbet koyu olsun.",
+            "Hayırlı akşamlar {{name}}."
+        ],
+        "night": [
+            "İyi geceler {{name}};",
+            "{{name}}, gece düşüncenin dostudur.",
+            "{{name}}, karanlığın en koyusu şafağa yakındır.",
+            "{{name}}, sükût altındır.",
+            "İyi geceler {{name}}; gece karanlığı, sabah aydınlığı doğurur.",
+            "{{name}}, uykusuz başa derman olmaz.",
+            "{{name}}, yıldızlar karanlıkta parlar.",
+            "İyi geceler {{name}}; gece uzun, dertler kısa olsun.",
+            "{{name}}, yarın yeni bir gün.",
+            "{{name}}, dinlenmek de iştir; vakit nakittir.",
+            "İyi geceler {{name}}; gecenin sessizliği söze bedeldir.",
+            "Hayırlı geceler {{name}}; huzurla uyu."
+        ]
+    }
+}

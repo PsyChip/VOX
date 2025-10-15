@@ -1,0 +1,136 @@
+{
+    "resume": [
+        "We're back online — we were on {{topic}}.",
+        "Connection restored; we were talking about {{topic}}.",
+        "Back again — last topic was {{topic}}.",
+        "Picking up where we left off: {{topic}}.",
+        "I’m back — last thing we discussed was {{topic}}."
+    ],
+    "firstTime": [
+        "Every story has a beginning; ours starts right here.",
+        "Every journey has a first step; this is where we begin.",
+        "Every adventure has a starting point; ours is right here.",
+        "Every quest opens with a breath; our page is turning now.",
+        "Every change starts with a step; here's where we take ours.",
+        "Every moment is a new beginning; this is that moment.",
+        "A power forgotten for centuries awakens; who knows, perhaps a prophecy will reshape itself.",
+        "In the right hands, knowledge is power; otherwise it brings disaster.",
+        "The world is changing. The wise remain, the foolish are forgotten."
+    ],
+    "anonymous": {
+        "morning": [
+            "Good morning — the early bird catches the worm.",
+            "Rise and shine; morning shows the day.",
+            "Good morning — well begun is half done.",
+            "Every morning brings a fresh start.",
+            "Start as you mean to go on.",
+            "Good morning — new day, new chances.",
+            "Bright morning, bright mind.",
+            "Good morning — a good start makes a good ending.",
+            "Up and at ’em; seize the day early.",
+            "Good morning — today is the first day of the rest of your life.",
+            "Morning light, clear sight.",
+            "Good morning — fortune favors the early riser."
+        ],
+        "day": [
+            "Hello — make hay while the sun shines.",
+            "Time and tide wait for no one.",
+            "Strike while the iron is hot.",
+            "Today’s work is tomorrow’s foundation.",
+            "Actions speak louder than words.",
+            "No time like the present.",
+            "Well done is better than well said.",
+            "The harder you work, the luckier you get.",
+            "Idle hands are the devil’s workshop.",
+            "Rome wasn’t built in a day.",
+            "Practice makes perfect.",
+            "Fortune favors the bold."
+        ],
+        "evening": [
+            "Good evening — a day well spent brings happy sleep.",
+            "After toil comes rest.",
+            "Good evening — evening crowns the day.",
+            "As the sun sets, let worries set too.",
+            "Good evening — rest is the reward of labor.",
+            "The day is done; well played.",
+            "Good evening — twilight invites reflection.",
+            "Another day conquered; another evening earned.",
+            "Good evening — every sunset is an opportunity to reset.",
+            "Call it a day — you’ve earned it.",
+            "Good evening — peace and quiet at last.",
+            "Tomorrow is another day."
+        ],
+        "night": [
+            "Good night — the darkest hour is just before dawn.",
+            "Working late? The stars shine brightest in the dark.",
+            "Good night — sleep on it; night brings counsel.",
+            "Burning the midnight oil? Steady on.",
+            "Good night — after darkness comes the dawn.",
+            "Silence speaks when words cannot.",
+            "Early to bed, early to rise.",
+            "Good night — rest fuels tomorrow.",
+            "Moonlight guides those who dare to dream.",
+            "Good night — sleep tight.",
+            "When in doubt, sleep on it.",
+            "Good night — tomorrow will tell."
+        ]
+    },
+    "known": {
+        "morning": [
+            "Good morning {{name}} — the early bird catches the worm.",
+            "{{name}}, rise and shine; morning shows the day.",
+            "Good morning {{name}} — well begun is half done.",
+            "{{name}}, every morning brings a fresh start.",
+            "Good morning {{name}} — start as you mean to go on.",
+            "{{name}}, new day, new chances.",
+            "Good morning {{name}} — bright morning, bright mind.",
+            "{{name}}, a good start makes a good ending.",
+            "Good morning {{name}} — up and at ’em.",
+            "{{name}}, today is the first day of the rest of your life.",
+            "Good morning {{name}} — morning light, clear sight.",
+            "{{name}}, fortune favors the early riser."
+        ],
+        "day": [
+            "Hello {{name}} — make hay while the sun shines.",
+            "{{name}}, time and tide wait for no one.",
+            "Good day {{name}} — strike while the iron is hot.",
+            "{{name}}, today’s work is tomorrow’s foundation.",
+            "Hello {{name}} — actions speak louder than words.",
+            "{{name}}, no time like the present.",
+            "Good day {{name}} — well done is better than well said.",
+            "{{name}}, the harder you work, the luckier you get.",
+            "Good day {{name}} — idle hands are the devil’s workshop.",
+            "{{name}}, Rome wasn’t built in a day.",
+            "Good day {{name}} — practice makes perfect.",
+            "{{name}}, fortune favors the bold."
+        ],
+        "evening": [
+            "Good evening {{name}} — a day well spent brings happy sleep.",
+            "{{name}}, after toil comes rest.",
+            "Good evening {{name}} — evening crowns the day.",
+            "{{name}}, as the sun sets, let worries set too.",
+            "Good evening {{name}} — rest is the reward of labor.",
+            "{{name}}, the day is done; well played.",
+            "Good evening {{name}} — twilight invites reflection.",
+            "{{name}}, another day conquered; another evening earned.",
+            "Good evening {{name}} — every sunset is an opportunity to reset.",
+            "{{name}}, call it a day — you’ve earned it.",
+            "Good evening {{name}} — peace and quiet at last.",
+            "{{name}}, tomorrow is another day."
+        ],
+        "night": [
+            "Good night {{name}} — the darkest hour is just before dawn.",
+            "{{name}}, the stars shine brightest in the dark.",
+            "Good night {{name}} — sleep on it; night brings counsel.",
+            "{{name}}, burning the midnight oil? Steady on.",
+            "Good night {{name}} — after darkness comes the dawn.",
+            "{{name}}, silence speaks when words cannot.",
+            "Good night {{name}} — early to bed, early to rise.",
+            "{{name}}, rest fuels tomorrow.",
+            "Good night {{name}} — moonlight guides those who dare to dream.",
+            "{{name}}, sleep tight.",
+            "Good night {{name}} — when in doubt, sleep on it.",
+            "{{name}}, tomorrow will tell."
+        ]
+    }
+}

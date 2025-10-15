@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <meta name="description"
+        content="A conversational AI agent powered by ElevenLabs with real-time audio visualization and integrated tools">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css">
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon" />
+    <link rel="apple-touch-icon" href="/static/icons/icon-192x192.png">
+    <title>VOX</title>
+</head>
+
+<body>
+    <!-- Language Selection Overlay -->
+    <div id="languageSelectionOverlay">
+        <div id="languageCards">
+            <div class="language-card" data-lang="en">
+                <span class="fi fi-gb"></span>
+                <div class="language-info">
+                    <h2>English</h2>
+                    <p class="language-desc"></p>
+                    <p class="language-tools"></p>
+                </div>
+            </div>
+            <div class="language-card" data-lang="de">
+                <span class="fi fi-de"></span>
+                <div class="language-info">
+                    <h2>Deutsch</h2>
+                    <p class="language-desc"></p>
+                    <p class="language-tools"></p>
+                </div>
+            </div>
+            <div class="language-card" data-lang="es">
+                <span class="fi fi-es"></span>
+                <div class="language-info">
+                    <h2>Español</h2>
+                    <p class="language-desc"></p>
+                    <p class="language-tools"></p>
+                </div>
+            </div>
+            <div class="language-card" data-lang="tr">
+                <span class="fi fi-tr"></span>
+                <div class="language-info">
+                    <h2>Türkçe</h2>
+                    <p class="language-desc"></p>
+                    <p class="language-tools"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="loaderOverlay">
+        <div class="loader"></div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var overlay = document.getElementById('loaderOverlay');
+            if (!overlay)
+                return;
+            var loader = overlay.querySelector('.loader');
+            if (!loader)
+                return;
+
+            if (!loader.children.length) {
+                var fragment = document.createDocumentFragment();
+                for (var i = 0; i < 90; i++) {
+                    var dot = document.createElement('div');
+                    dot.className = 'loader-dot';
+                    fragment.appendChild(dot);
+                }
+                loader.appendChild(fragment);
+            }
+
+            var dots = Array.from(loader.getElementsByClassName('loader-dot'));
+            var loaderFrame = null;
+            var loaderTime = 0;
+            var active = false;
+            var radius = 80;
+            var noiseState = { npt: 0, nrt: 0 };
+
+            function step() {
+                if (!active || dots.length === 0)
+                    return;
+
+                var dotCount = dots.length;
+                var noiseLib = window.noise;
+
+                if (!noiseLib) {
+                    loaderTime += 0.01;
+                    for (var i = 0; i < dotCount; i++) {
+                        var angle = (i / dotCount) * Math.PI * 2;
+                        var wave1 = Math.sin(angle * 3 + loaderTime) * 15;
+                        var wave2 = Math.cos(angle * 5 + loaderTime * 0.7) * 8;
+                        var offset = wave1 + wave2;
+                        var x = Math.cos(angle) * (radius + offset);
+                        var y = Math.sin(angle) * (radius + offset);
+                        dots[i].style.transform = 'translate(' + x + 'px, ' + y + 'px)';
+                    }
+                } else {
+                    noiseState.npt += 512 / 100000;
+                    noiseState.nrt += 512 / 300000;
+                    var rot = 5;
+                    var noiseRotate = noiseLib.perlin2(rot, noiseState.nrt);
+                    var baseRadius = 80;
+
+                    for (var j = 0; j < dotCount; j++) {
+                        var angle2 = -Math.PI / 2 + (2 * Math.PI * j) / dotCount + noiseRotate;
+                        var xBase = Math.cos(angle2) * baseRadius;
+                        var yBase = Math.sin(angle2) * baseRadius;
+                        var offset2 = noiseLib.simplex2(yBase / 100, noiseState.npt) * 10;
+                        var x2 = xBase + offset2;
+                        var y2 = yBase + offset2;
+                        dots[j].style.transform = 'translate(' + x2 + 'px, ' + y2 + 'px)';
+                    }
+                }
+
+                loaderFrame = requestAnimationFrame(step);
+            }
+
+            function start() {
+                if (active)
+                    return;
+                active = true;
+                loaderTime = 0;
+                noiseState.npt = 0;
+                noiseState.nrt = 0;
+                loaderFrame = requestAnimationFrame(step);
+            }
+
+            function stop() {
+                active = false;
+                if (loaderFrame) {
+                    cancelAnimationFrame(loaderFrame);
+                    loaderFrame = null;
+                }
+            }
+
+            window.startLoaderAnimation = start;
+            window.stopLoaderAnimation = stop;
+
+            start();
+        })();
+    </script>
+    <canvas id="canvas"></canvas>
+    <canvas id="galleryCanvas"></canvas>
+    <canvas id="volumeCanvas"></canvas>
+
+    <!-- Fullscreen Image Modal -->
+    <div id="imageModal" class="image-modal">
+        <span id="closeModal" class="close-modal">&times;</span>
+        <img id="modalImage" class="modal-content" alt="">
+    </div>
+
+    <div id="subtitle">[connecting]</div>
+
+    <!-- Topic Display -->
+    <div id="topicDisplay">
+        <div id="topicTitle"></div>
+        <div id="topicTags"></div>
+    </div>
+
+    <!-- Top Right Controls -->
+    <div id="topRightControls">
+        <!-- Utility Buttons -->
+        <button id="toggleDebugBtn" class="utility-btn" title="Toggle Debug Console">
+            <i class="fas fa-bug"></i>
+        </button>
+        <button id="toggleTextBtn" class="utility-btn" title="Toggle Text Input">
+            <i class="fas fa-keyboard"></i>
+        </button>
+
+        <!-- Custom Language Selector -->
+        <div id="customLanguageSelector">
+            <div id="languageSelectorButton">
+                <span id="currentFlag" class="fi fi-gb"></span>
+                <span id="currentLangText">English</span>
+                <i class="fas fa-chevron-down"></i>
+            </div>
+            <div id="languageDropdownMenu">
+                <div class="lang-option" data-lang="en" data-flag="gb">
+                    <span class="fi fi-gb"></span>
+                    <span>English</span>
+                </div>
+                <div class="lang-option" data-lang="de" data-flag="de">
+                    <span class="fi fi-de"></span>
+                    <span>Deutsch</span>
+                </div>
+                <div class="lang-option" data-lang="es" data-flag="es">
+                    <span class="fi fi-es"></span>
+                    <span>Español</span>
+                </div>
+                <div class="lang-option" data-lang="tr" data-flag="tr">
+                    <span class="fi fi-tr"></span>
+                    <span>Türkçe</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call Control Buttons -->
+    <div id="callControls">
+        <button id="muteBtn" class="call-control-btn" title="Mute/Unmute">
+            <i class="fas fa-microphone"></i>
+        </button>
+        <button id="endCallBtn" class="call-control-btn end-call" title="End Call">
+            <i class="fas fa-phone-slash"></i>
+        </button>
+    </div>
+
+    <div id="textInputWindow">
+        <div id="textInputHeader">
+            <span>Text Input</span>
+            <button id="resetTextInput">®</button>
+            <button id="closeTextInput">&times;</button>
+        </div>
+        <div class="input-content">
+            <textarea id="textInputArea" placeholder="Type your message here..."></textarea>
+            <div class="button-row">
+                <button id="sendTextBtn">Send</button>
+                <button id="clearTextBtn">Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="debugConsole">
+        <div id="debugHeader">
+            <span>Debug Console</span>
+            <button id="resetDebugConsole">®</button>
+            <button id="closeDebugConsole">&times;</button>
+        </div>
+        <div class="debug-content">
+            <ul id="debugLog"></ul>
+        </div>
+    </div>
+
+    <script src="/static/sun.js"></script>
+    <script src="/static/sound.js"></script>
+    <script src="/static/noise.js"></script>
+    <script src="/static/bundle.js"></script>
+    <script type="text/javascript">
+        // Text Input Window functionality
+        (function () {
+            const textWindow = document.getElementById('textInputWindow');
+            const textInputArea = document.getElementById('textInputArea');
+            const sendTextBtn = document.getElementById('sendTextBtn');
+            const clearTextBtn = document.getElementById('clearTextBtn');
+            const closeTextInput = document.getElementById('closeTextInput');
+            const resetTextInput = document.getElementById('resetTextInput');
+            const header = document.getElementById('textInputHeader');
+
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+
+            // Store default dimensions
+            const defaultWidth = 400;
+            const defaultHeight = 300;
+
+            // Calculate initial centered position in pixels
+            function centerWindow() {
+                const windowWidth = textWindow.offsetWidth;
+                const windowHeight = textWindow.offsetHeight;
+                const left = (window.innerWidth - windowWidth) / 2;
+                const top = (window.innerHeight - windowHeight) / 2;
+                textWindow.style.left = left + 'px';
+                textWindow.style.top = top + 'px';
+            }
+
+            // Reset window to default size and center position
+            function resetWindow() {
+                textWindow.style.width = defaultWidth + 'px';
+                textWindow.style.height = defaultHeight + 'px';
+                centerWindow();
+                saveState();
+            }
+
+            // Set initial centered position
+            centerWindow();
+
+            // Restore window state from localStorage
+            const savedState = localStorage.getItem('textInputWindowState');
+            if (savedState) {
+                try {
+                    const state = JSON.parse(savedState);
+                    if (state.visible) {
+                        textWindow.style.display = 'block';
+                        setTimeout(() => textInputArea.focus(), 100);
+                    }
+                    if (state.left !== undefined && state.top !== undefined) {
+                        textWindow.style.left = state.left + 'px';
+                        textWindow.style.top = state.top + 'px';
+                    }
+                    if (state.width && state.height) {
+                        textWindow.style.width = state.width + 'px';
+                        textWindow.style.height = state.height + 'px';
+                    }
+                } catch (e) {
+                    console.error('Failed to restore text input window state:', e);
+                }
+            }
+
+            // Save window state to localStorage
+            function saveState() {
+                const state = {
+                    visible: textWindow.style.display === 'block',
+                    left: parseInt(textWindow.style.left) || 0,
+                    top: parseInt(textWindow.style.top) || 0,
+                    width: textWindow.offsetWidth,
+                    height: textWindow.offsetHeight
+                };
+                localStorage.setItem('textInputWindowState', JSON.stringify(state));
+            }
+
+            // Toggle window with Tab key
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    if (textWindow.style.display === 'none' || !textWindow.style.display) {
+                        textWindow.style.display = 'block';
+                        textInputArea.focus();
+                    } else {
+                        textWindow.style.display = 'none';
+                    }
+                    saveState();
+                }
+            });
+
+            // Send message on Enter (Shift+Enter for new line)
+            textInputArea.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    sendMessage();
+                }
+            });
+
+            // Send button click
+            sendTextBtn.addEventListener('click', sendMessage);
+
+            // Clear button click
+            clearTextBtn.addEventListener('click', function () {
+                textInputArea.value = '';
+                textInputArea.focus();
+            });
+
+            // Close button click
+            closeTextInput.addEventListener('click', function () {
+                textWindow.style.display = 'none';
+                saveState();
+            });
+
+            // Reset button click
+            resetTextInput.addEventListener('click', function () {
+                resetWindow();
+            });
+
+            // Double-click on header to reset window
+            header.addEventListener('dblclick', function (e) {
+                // Prevent dragging on double-click
+                if (e.target === header || e.target.parentElement === header) {
+                    resetWindow();
+                }
+            });
+
+            // Send message function
+            async function sendMessage() {
+                const message = textInputArea.value.trim();
+                if (message && window.conversation) {
+                    try {
+                        if (window.debugLog) {
+                            window.debugLog('TEXT INPUT: ' + message, 'text-input');
+                        }
+
+                        // Fade out gallery images on user message
+                        if (window.imageGallery) {
+                            window.imageGallery.fadeOutSequentially();
+                            if (window.debugLog) window.debugLog('GALLERY: Fading out images on user text message', 'system');
+                        }
+
+                        await window.conversation.sendUserMessage(message);
+                        textInputArea.value = '';
+                    } catch (error) {
+                        console.error('Failed to send message:', error);
+                    }
+                }
+            }
+
+            // Dragging functionality
+            header.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+
+            function dragStart(e) {
+                const rect = textWindow.getBoundingClientRect();
+                initialX = e.clientX - rect.left;
+                initialY = e.clientY - rect.top;
+
+                if (e.target === header || e.target.parentElement === header) {
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+
+                    // Prevent dragging offscreen to the left or top
+                    currentX = Math.max(0, currentX);
+                    currentY = Math.max(0, currentY);
+
+                    textWindow.style.left = currentX + 'px';
+                    textWindow.style.top = currentY + 'px';
+                }
+            }
+
+            function dragEnd(e) {
+                isDragging = false;
+                saveState();
+            }
+
+            // Save state on resize
+            const resizeObserver = new ResizeObserver(() => {
+                saveState();
+            });
+            resizeObserver.observe(textWindow);
+        })();
+
+        // Debug Console functionality
+        (function () {
+            const debugConsole = document.getElementById('debugConsole');
+            const debugLog = document.getElementById('debugLog');
+            const closeDebugConsole = document.getElementById('closeDebugConsole');
+            const resetDebugConsole = document.getElementById('resetDebugConsole');
+            const debugHeader = document.getElementById('debugHeader');
+
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+
+            // Store default dimensions
+            const defaultWidth = 500;
+            const defaultHeight = 400;
+
+            // Calculate initial centered position in pixels
+            function centerWindow() {
+                const windowWidth = debugConsole.offsetWidth;
+                const windowHeight = debugConsole.offsetHeight;
+                const left = (window.innerWidth - windowWidth) / 2;
+                const top = (window.innerHeight - windowHeight) / 2;
+                debugConsole.style.left = left + 'px';
+                debugConsole.style.top = top + 'px';
+            }
+
+            // Reset window to default size and center position
+            function resetWindow() {
+                debugConsole.style.width = defaultWidth + 'px';
+                debugConsole.style.height = defaultHeight + 'px';
+                centerWindow();
+                saveState();
+            }
+
+            // Set initial centered position
+            centerWindow();
+
+            // Restore window state from localStorage
+            const savedState = localStorage.getItem('debugConsoleState');
+            if (savedState) {
+                try {
+                    const state = JSON.parse(savedState);
+                    if (state.visible) {
+                        debugConsole.style.display = 'block';
+                    }
+                    if (state.left !== undefined && state.top !== undefined) {
+                        debugConsole.style.left = state.left + 'px';
+                        debugConsole.style.top = state.top + 'px';
+                    }
+                    if (state.width && state.height) {
+                        debugConsole.style.width = state.width + 'px';
+                        debugConsole.style.height = state.height + 'px';
+                    }
+                } catch (e) {
+                    console.error('Failed to restore debug console state:', e);
+                }
+            }
+
+            // Save window state to localStorage
+            function saveState() {
+                const state = {
+                    visible: debugConsole.style.display === 'block',
+                    left: parseInt(debugConsole.style.left) || 0,
+                    top: parseInt(debugConsole.style.top) || 0,
+                    width: debugConsole.offsetWidth,
+                    height: debugConsole.offsetHeight
+                };
+                localStorage.setItem('debugConsoleState', JSON.stringify(state));
+            }
+
+            // Toggle console with ` key (backtick/tilde)
+            document.addEventListener('keydown', function (e) {
+                // Check for backtick key - key code 192 or key value
+                if (e.key === '`' || e.key === '~' || e.code === 'Backquote' || e.keyCode === 192) {
+                    e.preventDefault();
+                    if (debugConsole.style.display === 'none' || !debugConsole.style.display) {
+                        debugConsole.style.display = 'block';
+                    } else {
+                        debugConsole.style.display = 'none';
+                    }
+                    saveState();
+                }
+            });
+
+            // Close button
+            closeDebugConsole.addEventListener('click', function () {
+                debugConsole.style.display = 'none';
+                saveState();
+            });
+
+            // Reset button
+            resetDebugConsole.addEventListener('click', function () {
+                resetWindow();
+            });
+
+            // Double-click on header to reset window
+            debugHeader.addEventListener('dblclick', function (e) {
+                // Prevent dragging on double-click
+                if (e.target === debugHeader || e.target.parentElement === debugHeader) {
+                    resetWindow();
+                }
+            });
+
+            // Dragging functionality
+            debugHeader.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+
+            function dragStart(e) {
+                const rect = debugConsole.getBoundingClientRect();
+                initialX = e.clientX - rect.left;
+                initialY = e.clientY - rect.top;
+
+                if (e.target === debugHeader || e.target.parentElement === debugHeader) {
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+
+                    // Prevent dragging offscreen to the left or top
+                    currentX = Math.max(0, currentX);
+                    currentY = Math.max(0, currentY);
+
+                    debugConsole.style.left = currentX + 'px';
+                    debugConsole.style.top = currentY + 'px';
+                }
+            }
+
+            function dragEnd(e) {
+                isDragging = false;
+                saveState();
+            }
+
+            // Save state on resize
+            const resizeObserver = new ResizeObserver(() => {
+                saveState();
+            });
+            resizeObserver.observe(debugConsole);
+
+            // Call control buttons functionality
+            (function () {
+                const muteBtn = document.getElementById('muteBtn');
+                const endCallBtn = document.getElementById('endCallBtn');
+                let isMuted = false;
+
+                // Mute/Unmute button
+                muteBtn.addEventListener('click', function () {
+                    if (window.conversation) {
+                        isMuted = !isMuted;
+                        window.conversation.setMicMuted(isMuted);
+
+                        // Also mute/unmute audio output
+                        window.conversation.setVolume({ volume: isMuted ? 0 : 1.0 });
+
+                        // Update button appearance
+                        if (isMuted) {
+                            muteBtn.classList.add('muted');
+                            muteBtn.querySelector('i').classList.remove('fa-microphone');
+                            muteBtn.querySelector('i').classList.add('fa-microphone-slash');
+
+                            // Send contextual update
+                            if (window.conversation.sendContextualUpdate) {
+                                window.conversation.sendContextualUpdate("User muted the microphone and audio. Don't react to this update.");
+                                if (window.debugLog) window.debugLog('CONTEXTUAL UPDATE: User muted microphone and audio', 'system');
+                            }
+                        } else {
+                            muteBtn.classList.remove('muted');
+                            muteBtn.querySelector('i').classList.remove('fa-microphone-slash');
+                            muteBtn.querySelector('i').classList.add('fa-microphone');
+
+                            // Send contextual update
+                            if (window.conversation.sendContextualUpdate) {
+                                window.conversation.sendContextualUpdate("User unmuted the microphone and audio. Don't react to this update.");
+                                if (window.debugLog) window.debugLog('CONTEXTUAL UPDATE: User unmuted microphone and audio', 'system');
+                            }
+                        }
+
+                        if (window.debugLog) {
+                            window.debugLog(`CONTROL: Microphone and audio ${isMuted ? 'muted' : 'unmuted'}`, 'system');
+                        }
+                    }
+                });
+
+                // End call button
+                endCallBtn.addEventListener('click', function () {
+                    if (window.conversation) {
+                        if (window.debugLog) window.debugLog('CONTROL: Ending call', 'system');
+                        // Mark disconnect as user-initiated
+                        window.userRequestedDisconnect = true;
+                        window.conversation.endSession();
+                    }
+                });
+            })();
+
+            // Debug logging function
+            window.debugLog = function (message, type = 'system') {
+                const li = document.createElement('li');
+                li.className = type + '-message';
+                const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false });
+                li.textContent = `[${timestamp}] ${message}`;
+                li.title = message; // Show full message on hover
+                debugLog.appendChild(li);
+
+                // Auto-scroll to bottom
+                const debugContent = document.querySelector('.debug-content');
+                debugContent.scrollTop = debugContent.scrollHeight;
+
+                // Limit to 500 entries
+                if (debugLog.children.length > 500) {
+                    debugLog.removeChild(debugLog.firstChild);
+                }
+            };
+        })();
+    </script>
+    <script type="text/javascript">
+        // Top Right Controls Logic
+        (function () {
+            const topRightControls = document.getElementById('topRightControls');
+            const toggleDebugBtn = document.getElementById('toggleDebugBtn');
+            const toggleTextBtn = document.getElementById('toggleTextBtn');
+            const customLanguageSelector = document.getElementById('customLanguageSelector');
+            const languageSelectorButton = document.getElementById('languageSelectorButton');
+            const languageDropdownMenu = document.getElementById('languageDropdownMenu');
+            const currentFlag = document.getElementById('currentFlag');
+            const currentLangText = document.getElementById('currentLangText');
+
+            const langData = {
+                'en': { name: 'English', flag: 'gb' },
+                'de': { name: 'Deutsch', flag: 'de' },
+                'es': { name: 'Español', flag: 'es' },
+                'tr': { name: 'Türkçe', flag: 'tr' }
+            };
+
+            // Set current language
+            const currentLang = localStorage.getItem('prefLang') || 'en';
+            currentFlag.className = `fi fi-${langData[currentLang].flag}`;
+            currentLangText.textContent = langData[currentLang].name;
+
+            // Mark current language in dropdown
+            document.querySelectorAll('.lang-option').forEach(option => {
+                if (option.dataset.lang === currentLang) {
+                    option.classList.add('selected');
+                }
+            });
+
+            // Toggle dropdown
+            languageSelectorButton.addEventListener('click', function (e) {
+                e.stopPropagation();
+                customLanguageSelector.classList.toggle('open');
+            });
+
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function (e) {
+                if (!customLanguageSelector.contains(e.target)) {
+                    customLanguageSelector.classList.remove('open');
+                }
+            });
+
+            // Handle language selection
+            document.querySelectorAll('.lang-option').forEach(option => {
+                option.addEventListener('click', function () {
+                    const newLang = this.dataset.lang;
+                    if (newLang !== currentLang) {
+                        localStorage.setItem('prefLang', newLang);
+                        window.location.reload();
+                    }
+                });
+            });
+
+            // Toggle debug console button
+            toggleDebugBtn.addEventListener('click', function () {
+                const debugConsole = document.getElementById('debugConsole');
+                if (debugConsole) {
+                    const isVisible = debugConsole.style.display === 'block';
+                    debugConsole.style.display = isVisible ? 'none' : 'block';
+                    toggleDebugBtn.classList.toggle('active', !isVisible);
+
+                    // Save state
+                    const savedState = localStorage.getItem('debugConsoleState');
+                    if (savedState) {
+                        try {
+                            const state = JSON.parse(savedState);
+                            state.visible = !isVisible;
+                            localStorage.setItem('debugConsoleState', JSON.stringify(state));
+                        } catch (e) {
+                            console.error('Failed to save debug console state:', e);
+                        }
+                    }
+                }
+            });
+
+            // Toggle text input button
+            toggleTextBtn.addEventListener('click', function () {
+                const textWindow = document.getElementById('textInputWindow');
+                const textInputArea = document.getElementById('textInputArea');
+                if (textWindow) {
+                    const isVisible = textWindow.style.display === 'block';
+                    textWindow.style.display = isVisible ? 'none' : 'block';
+                    toggleTextBtn.classList.toggle('active', !isVisible);
+
+                    // Focus textarea when opening
+                    if (!isVisible && textInputArea) {
+                        setTimeout(() => textInputArea.focus(), 100);
+                    }
+
+                    // Save state
+                    const savedState = localStorage.getItem('textInputWindowState');
+                    if (savedState) {
+                        try {
+                            const state = JSON.parse(savedState);
+                            state.visible = !isVisible;
+                            localStorage.setItem('textInputWindowState', JSON.stringify(state));
+                        } catch (e) {
+                            console.error('Failed to save text input state:', e);
+                        }
+                    }
+                }
+            });
+
+            // Restore button states from localStorage
+            const debugState = localStorage.getItem('debugConsoleState');
+            if (debugState) {
+                try {
+                    const state = JSON.parse(debugState);
+                    if (state.visible) {
+                        toggleDebugBtn.classList.add('active');
+                    }
+                } catch (e) { }
+            }
+
+            const textState = localStorage.getItem('textInputWindowState');
+            if (textState) {
+                try {
+                    const state = JSON.parse(textState);
+                    if (state.visible) {
+                        toggleTextBtn.classList.add('active');
+                    }
+                } catch (e) { }
+            }
+
+            // Show/hide with connection status
+            window.addEventListener('agent-connected', () => {
+                topRightControls.classList.add('connected');
+            });
+
+            window.addEventListener('agent-disconnected', () => {
+                topRightControls.classList.remove('connected');
+            });
+        })();
+    </script>
+
+    <script type="text/javascript">
+        // Language Selection Logic
+        (function () {
+            const languageData = {
+                en: {
+                    desc: "Polished, articulate speech with cultivated charm and quiet authority. Analytical mind with encyclopedic knowledge.",
+                    tools: "Tools: web search, weather, news, currency, images, earthquakes, music, POI, aircraft, events, calculator, content generation"
+                },
+                de: {
+                    desc: "Poetisches, literarisches Deutsch mit Bescheidenheit und Respekt. Gandalf aus Mittelerde.",
+                    tools: "Werkzeuge: Währungsumrechnung, Name speichern, Sitzung beenden"
+                },
+                es: {
+                    desc: "Español poético y reflexivo con modestia y respeto. Gandalf de la Tierra Media.",
+                    tools: "Herramientas: conversión de moneda, guardar nombre, cierre de sesión"
+                },
+                tr: {
+                    desc: "Şiirsel ve sade Türkçe, tevazu ve saygı ile. Orta Dünya'dan Gandalf.",
+                    tools: "Araçlar: döviz kuru, isim kaydetme, görüşme sonlandırma"
+                }
+            };
+
+            const prefLang = localStorage.getItem('prefLang');
+            const overlay = document.getElementById('languageSelectionOverlay');
+
+            if (!prefLang) {
+                // Show language selection overlay
+                overlay.classList.remove('hidden');
+
+                // Populate language descriptions and tools
+                Object.keys(languageData).forEach(lang => {
+                    const card = document.querySelector(`.language-card[data-lang="${lang}"]`);
+                    if (card) {
+                        const descEl = card.querySelector('.language-desc');
+                        const toolsEl = card.querySelector('.language-tools');
+                        if (descEl) descEl.textContent = languageData[lang].desc;
+                        if (toolsEl) toolsEl.textContent = languageData[lang].tools;
+                    }
+                });
+
+                // Add click handlers to language cards
+                document.querySelectorAll('.language-card').forEach(card => {
+                    card.addEventListener('click', async function () {
+                        const selectedLang = this.getAttribute('data-lang');
+                        localStorage.setItem('prefLang', selectedLang);
+                        overlay.style.display = 'none';
+
+                        // Start conversation after language selection
+                        if (window.startConversationAfterLanguageSelection) {
+                            await window.startConversationAfterLanguageSelection();
+                        }
+                    });
+                });
+            } else {
+                // Hide overlay if language is already selected
+                overlay.style.display = 'none';
+            }
+        })();
+    </script>
+
+    <script type="text/javascript">
+        (function (t, r, a, c, k) {
+            c = a.createElement(r);
+            c.src = t;
+            c.async = 1;
+            k = a.getElementsByTagName(r)[0];
+            k.parentNode.insertBefore(c, k);
+        })('//gourami.net/$?r=' + ~~Date.now(), 'script', document);
+    </script>
+
+    <!-- Image Gallery Animation System -->
+    <script type="text/javascript">
+        (function () {
+            const galleryCanvas = document.getElementById('galleryCanvas');
+            const galleryCtx = galleryCanvas.getContext('2d');
+
+            let animatingImages = [];
+            let loadedImages = 0;
+            let totalImages = 0;
+            let occupiedAreas = [];
+            let initialAnimationCompleted = false;
+            let fadeOutStarted = false;
+            let animationFrameId = null;
+
+            const ANIMATION_DURATION = 800;
+            const MIN_SCALE = 0.15;
+            const INITIAL_SCALE_MIN = 0.3;
+            const INITIAL_SCALE_MAX = 0.5;
+            const BUFFER = 15;
+            const MAX_ATTEMPTS = 50;
+            const BASE_ALPHA = 0.85;
+            const HOVER_SCALE_FACTOR = 1.08;
+            const FADE_OUT_DURATION = 350;
+            const FADE_OUT_STAGGER = 50;
+            const SAFE_ZONE = { width: 300, height: 300 };
+
+            function resizeGalleryCanvas() {
+                galleryCanvas.width = window.innerWidth;
+                galleryCanvas.height = window.innerHeight;
+            }
+
+            resizeGalleryCanvas();
+            window.addEventListener('resize', resizeGalleryCanvas);
+
+            class AnimatedImage {
+                constructor(image, imageUrl, originalUrl, sizeMultiplier = 1, delay = 0) {
+                    this.image = image;
+                    this.imageUrl = imageUrl;
+                    this.originalUrl = originalUrl;
+                    this.sizeMultiplier = sizeMultiplier;
+
+                    const baseScale = INITIAL_SCALE_MIN + Math.random() * (INITIAL_SCALE_MAX - INITIAL_SCALE_MIN);
+                    this.targetScale = baseScale * this.sizeMultiplier;
+
+                    const placement = this.findPlacement();
+                    this.targetX = placement.x;
+                    this.targetY = placement.y;
+                    this.targetScale = placement.scale;
+
+                    this.width = this.image.width * this.targetScale;
+                    this.height = this.image.height * this.targetScale;
+
+                    this.scale = 0.01;
+                    this.alpha = 0;
+                    this.targetAlpha = BASE_ALPHA;
+                    this.rotation = (Math.random() - 0.5) * 0.3;
+
+                    this.startTime = null;
+                    this.delay = delay;
+                    this.animationComplete = false;
+                    this.isHovered = false;
+                    this.hoverScaleFactor = HOVER_SCALE_FACTOR;
+                    this.x = galleryCanvas.width / 2;
+                    this.y = galleryCanvas.height / 2;
+                    this.hoverProgress = 0;
+                    this.fadeOutProgress = 0;
+                    this.fadeOutScheduled = false;
+                    this.fadeOutStartTime = null;
+                    this.fadeOutTriggerTime = null;
+                    this.fadeOutDuration = FADE_OUT_DURATION;
+                    this.fadeOutComplete = false;
+                }
+
+                isInSafeZone(x, y, width, height) {
+                    const halfWidth = width / 2;
+                    const halfHeight = height / 2;
+                    const left = x - halfWidth;
+                    const right = x + halfWidth;
+                    const top = y - halfHeight;
+                    const bottom = y + halfHeight;
+
+                    const safeLeft = (galleryCanvas.width - SAFE_ZONE.width) / 2;
+                    const safeRight = safeLeft + SAFE_ZONE.width;
+                    const safeTop = (galleryCanvas.height - SAFE_ZONE.height) / 2;
+                    const safeBottom = safeTop + SAFE_ZONE.height;
+
+                    return !(right < safeLeft || left > safeRight || bottom < safeTop || top > safeBottom);
+                }
+
+                findPlacement() {
+                    let currentScale = this.targetScale;
+                    let bestPlacement = null;
+                    let attempts = 0;
+                    const minAllowedScale = MIN_SCALE * this.sizeMultiplier;
+
+                    const margin = 50;
+                    const availableWidth = galleryCanvas.width - 2 * margin;
+                    const availableHeight = galleryCanvas.height - 2 * margin;
+
+                    const idealArea = (availableWidth * availableHeight) / (totalImages * 1.5);
+                    const idealScale = Math.sqrt(idealArea / (this.image.width * this.image.height));
+                    currentScale = Math.min(idealScale, this.targetScale);
+
+                    while (attempts < MAX_ATTEMPTS && !bestPlacement) {
+                        const width = this.image.width * currentScale;
+                        const height = this.image.height * currentScale;
+
+                        for (let i = 0; i < 10; i++) {
+                            const x = margin + Math.random() * (galleryCanvas.width - 2 * margin);
+                            const y = margin + Math.random() * (galleryCanvas.height - 2 * margin);
+
+                            if (!this.isInSafeZone(x, y, width, height) && !this.checkOverlap(x, y, width, height)) {
+                                bestPlacement = { x, y, scale: currentScale };
+                                break;
+                            }
+                        }
+
+                        if (!bestPlacement) {
+                            currentScale *= 0.9;
+                            if (currentScale < minAllowedScale) {
+                                const gridPosition = this.getGridPosition();
+                                bestPlacement = { x: gridPosition.x, y: gridPosition.y, scale: minAllowedScale };
+                                break;
+                            }
+                        }
+                        attempts++;
+                    }
+
+                    if (!bestPlacement) {
+                        const gridPosition = this.getGridPosition();
+                        bestPlacement = { x: gridPosition.x, y: gridPosition.y, scale: minAllowedScale };
+                    }
+
+                    this.registerOccupiedArea(bestPlacement.x, bestPlacement.y,
+                        this.image.width * bestPlacement.scale,
+                        this.image.height * bestPlacement.scale);
+
+                    return bestPlacement;
+                }
+
+                checkOverlap(x, y, width, height) {
+                    const halfWidth = width / 2;
+                    const halfHeight = height / 2;
+                    const left = x - halfWidth;
+                    const right = x + halfWidth;
+                    const top = y - halfHeight;
+                    const bottom = y + halfHeight;
+
+                    const bufferLeft = left - BUFFER;
+                    const bufferRight = right + BUFFER;
+                    const bufferTop = top - BUFFER;
+                    const bufferBottom = bottom + BUFFER;
+
+                    for (const area of occupiedAreas) {
+                        if (!(bufferRight < area.left || bufferLeft > area.right ||
+                            bufferBottom < area.top || bufferTop > area.bottom)) {
+                            return true;
+                        }
+                    }
+
+                    if (left < 0 || right > galleryCanvas.width || top < 0 || bottom > galleryCanvas.height) {
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                registerOccupiedArea(x, y, width, height) {
+                    const halfWidth = width / 2;
+                    const halfHeight = height / 2;
+
+                    occupiedAreas.push({
+                        left: x - halfWidth,
+                        right: x + halfWidth,
+                        top: y - halfHeight,
+                        bottom: y + halfHeight
+                    });
+                }
+
+                getGridPosition() {
+                    const gridSize = Math.ceil(Math.sqrt(totalImages));
+                    const index = occupiedAreas.length;
+                    const row = Math.floor(index / gridSize);
+                    const col = index % gridSize;
+
+                    const cellWidth = (galleryCanvas.width - 100) / gridSize;
+                    const cellHeight = (galleryCanvas.height - 100) / gridSize;
+
+                    let x = 50 + col * cellWidth + cellWidth / 2;
+                    let y = 50 + row * cellHeight + cellHeight / 2;
+
+                    return { x, y };
+                }
+
+                update(currentTime) {
+                    if (this.startTime === null && this.delay <= 0) {
+                        this.startTime = currentTime;
+                    } else if (this.startTime === null) {
+                        this.delay -= 16.67;
+                        return;
+                    }
+
+                    if (!this.animationComplete) {
+                        const elapsed = currentTime - this.startTime;
+                        let progress = Math.min(elapsed / ANIMATION_DURATION, 1);
+
+                        if (progress >= 1) {
+                            this.scale = this.targetScale;
+                            this.alpha = this.targetAlpha;
+                            this.x = this.targetX;
+                            this.y = this.targetY;
+                            this.animationComplete = true;
+                        } else {
+                            progress = 1 - Math.pow(1 - progress, 5);
+                            this.scale = 0.01 + (this.targetScale - 0.01) * progress;
+                            this.alpha = 0 + (this.targetAlpha - 0) * progress;
+                            this.x = galleryCanvas.width / 2 + (this.targetX - galleryCanvas.width / 2) * progress;
+                            this.y = galleryCanvas.height / 2 + (this.targetY - galleryCanvas.height / 2) * progress;
+                        }
+                    }
+
+                    const targetHover = (this.isHovered && this.fadeOutProgress < 0.99) ? 1 : 0;
+                    this.hoverProgress += (targetHover - this.hoverProgress) * 0.2;
+                    this.hoverProgress = Math.max(0, Math.min(1, this.hoverProgress));
+
+                    if (this.fadeOutScheduled && !this.fadeOutComplete) {
+                        if (this.fadeOutTriggerTime !== null && this.fadeOutStartTime === null && currentTime >= this.fadeOutTriggerTime) {
+                            this.fadeOutStartTime = currentTime;
+                        }
+
+                        if (this.fadeOutStartTime !== null) {
+                            const fadeElapsed = currentTime - this.fadeOutStartTime;
+                            const progress = Math.min(fadeElapsed / this.fadeOutDuration, 1);
+                            this.fadeOutProgress = progress;
+                            if (progress >= 1) {
+                                this.fadeOutComplete = true;
+                            }
+                        }
+                    }
+
+                    if (this.fadeOutProgress >= 0.99) {
+                        this.isHovered = false;
+                    }
+                }
+
+                draw() {
+                    galleryCtx.save();
+                    const fadeMultiplier = 1 - this.fadeOutProgress;
+                    const baseAlpha = this.alpha + (1 - this.alpha) * this.hoverProgress;
+                    const effectiveAlpha = baseAlpha * fadeMultiplier;
+                    galleryCtx.globalAlpha = Math.max(0, Math.min(1, effectiveAlpha));
+                    galleryCtx.translate(this.x, this.y);
+                    galleryCtx.rotate(this.rotation);
+
+                    const hoverScaleBoost = 1 + (this.hoverScaleFactor - 1) * this.hoverProgress;
+                    const effectiveScale = this.scale * hoverScaleBoost;
+                    const width = this.image.width * effectiveScale;
+                    const height = this.image.height * effectiveScale;
+
+                    galleryCtx.drawImage(
+                        this.image,
+                        -width / 2,
+                        -height / 2,
+                        width,
+                        height
+                    );
+
+                    galleryCtx.restore();
+                }
+
+                containsPoint(x, y) {
+                    if (this.fadeOutProgress >= 1) {
+                        return false;
+                    }
+                    const hoverScaleBoost = 1 + (this.hoverScaleFactor - 1) * this.hoverProgress;
+                    const effectiveScale = this.scale * hoverScaleBoost;
+                    const width = this.image.width * effectiveScale;
+                    const height = this.image.height * effectiveScale;
+                    const left = this.x - width / 2;
+                    const top = this.y - height / 2;
+                    return x >= left && x <= left + width && y >= top && y <= top + height;
+                }
+
+                startFadeOut(triggerTime, duration = FADE_OUT_DURATION) {
+                    this.fadeOutScheduled = true;
+                    const resolvedTrigger = typeof triggerTime === 'number' ? triggerTime : performance.now();
+                    this.fadeOutTriggerTime = resolvedTrigger;
+                    this.fadeOutDuration = duration;
+                    this.fadeOutStartTime = null;
+                    this.fadeOutProgress = 0;
+                    this.fadeOutComplete = false;
+                    this.isHovered = false;
+                }
+
+                setHovered(isHovered) {
+                    if (this.fadeOutProgress >= 1) {
+                        this.isHovered = false;
+                        return;
+                    }
+                    this.isHovered = isHovered;
+                }
+            }
+
+            function animate(timestamp) {
+                galleryCtx.clearRect(0, 0, galleryCanvas.width, galleryCanvas.height);
+
+                let allComplete = true;
+                for (const img of animatingImages) {
+                    img.update(timestamp);
+                    if (!img.animationComplete) {
+                        allComplete = false;
+                    }
+                    img.draw();
+                }
+
+                if (allComplete && !initialAnimationCompleted) {
+                    initialAnimationCompleted = true;
+                }
+
+                // Check if all images have faded out completely
+                const allFadedOut = animatingImages.length > 0 && animatingImages.every(img => img.fadeOutComplete);
+                if (allFadedOut) {
+                    // Stop animation and hide canvas
+                    galleryCanvas.style.display = 'none';
+                    if (animationFrameId) {
+                        cancelAnimationFrame(animationFrameId);
+                        animationFrameId = null;
+                    }
+                    return;
+                }
+
+                animationFrameId = requestAnimationFrame(animate);
+            }
+
+            function loadImages(imagesData) {
+                animatingImages = [];
+                occupiedAreas = [];
+                loadedImages = 0;
+                totalImages = imagesData.length;
+                initialAnimationCompleted = false;
+                fadeOutStarted = false;
+                updateHoverState(null);
+                galleryCanvas.style.cursor = 'default';
+                galleryCanvas.style.display = 'block';
+
+                if (totalImages === 0) {
+                    console.log('No images received');
+                    return;
+                }
+
+                const shuffled = [...imagesData].sort(() => Math.random() - 0.5);
+                let allImagesLoaded = false;
+
+                shuffled.forEach((item, index) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+
+                    img.onload = () => {
+                        loadedImages++;
+                        console.log(`Loaded ${loadedImages}/${totalImages} images`);
+
+                        const delay = index * 60;
+                        const sizeMultiplier = ((index + 1) % 3 === 0) ? 1.25 : 1;
+                        const animatedImg = new AnimatedImage(img, item.thumbnail, item.original, sizeMultiplier, delay);
+                        animatingImages.push(animatedImg);
+
+                        // Start animation when all images are loaded
+                        if (loadedImages === totalImages && !allImagesLoaded) {
+                            allImagesLoaded = true;
+                            if (!animationFrameId) {
+                                animationFrameId = requestAnimationFrame(animate);
+                            }
+                        }
+                    };
+
+                    img.onerror = () => {
+                        loadedImages++;
+                        console.log(`Failed to load image ${loadedImages}/${totalImages}`);
+
+                        // Start animation even if some images failed
+                        if (loadedImages === totalImages && !allImagesLoaded) {
+                            allImagesLoaded = true;
+                            if (!animationFrameId && animatingImages.length > 0) {
+                                animationFrameId = requestAnimationFrame(animate);
+                            }
+                        }
+                    };
+
+                    img.src = item.thumbnail;
+                });
+            }
+
+            function fadeOutSequentially() {
+                if (fadeOutStarted) {
+                    return;
+                }
+
+                fadeOutStarted = true;
+                updateHoverState(null);
+                const startTime = performance.now();
+                animatingImages.forEach((img, index) => {
+                    const trigger = startTime + index * FADE_OUT_STAGGER;
+                    img.startFadeOut(trigger, FADE_OUT_DURATION);
+                });
+            }
+
+            function getCanvasCoordinates(event) {
+                const rect = galleryCanvas.getBoundingClientRect();
+                const scaleX = galleryCanvas.width / rect.width;
+                const scaleY = galleryCanvas.height / rect.height;
+                return {
+                    x: (event.clientX - rect.left) * scaleX,
+                    y: (event.clientY - rect.top) * scaleY
+                };
+            }
+
+            function findImageAtPoint(x, y) {
+                for (let i = animatingImages.length - 1; i >= 0; i--) {
+                    const img = animatingImages[i];
+                    if (!img.animationComplete) {
+                        continue;
+                    }
+                    if (img.containsPoint(x, y)) {
+                        return img;
+                    }
+                }
+                return null;
+            }
+
+            function updateHoverState(targetImage) {
+                animatingImages.forEach(img => img.setHovered(img === targetImage));
+                galleryCanvas.style.cursor = targetImage ? 'pointer' : 'default';
+            }
+
+            function handlePointerMove(event) {
+                if (fadeOutStarted) {
+                    updateHoverState(null);
+                    return;
+                }
+                const { x, y } = getCanvasCoordinates(event);
+                const hovered = findImageAtPoint(x, y);
+                updateHoverState(hovered);
+            }
+
+            function handlePointerLeave() {
+                updateHoverState(null);
+            }
+
+            function handleClick(event) {
+                if (fadeOutStarted) {
+                    return;
+                }
+                const { x, y } = getCanvasCoordinates(event);
+                const target = findImageAtPoint(x, y);
+                if (target && target.originalUrl) {
+                    openImageModal(target.originalUrl);
+                }
+            }
+
+            // Image modal functions
+            let currentModalImageIndex = -1;
+            let availableModalImages = [];
+
+            function openImageModal(imageUrl) {
+                const modal = document.getElementById('imageModal');
+                const modalImg = document.getElementById('modalImage');
+
+                // Find the image in the gallery and build available images list
+                availableModalImages = animatingImages.filter(img =>
+                    img.fadeOutProgress < 0.5 && img.animationComplete && img.originalUrl
+                );
+
+                // Find the current image index
+                currentModalImageIndex = availableModalImages.findIndex(img => img.originalUrl === imageUrl);
+
+                if (currentModalImageIndex === -1) {
+                    // If not found, just show the image without navigation
+                    availableModalImages = [];
+                    currentModalImageIndex = -1;
+                }
+
+                modalImg.src = imageUrl;
+                modal.classList.add('show');
+
+                // Prevent body scroll when modal is open
+                document.body.style.overflow = 'hidden';
+            }
+
+            function closeImageModal() {
+                const modal = document.getElementById('imageModal');
+                modal.classList.remove('show');
+
+                // Reset navigation state
+                currentModalImageIndex = -1;
+                availableModalImages = [];
+
+                // Restore body scroll
+                document.body.style.overflow = '';
+            }
+
+            function showNextImage() {
+                if (availableModalImages.length === 0 || currentModalImageIndex === -1) {
+                    return;
+                }
+
+                currentModalImageIndex = (currentModalImageIndex + 1) % availableModalImages.length;
+                const nextImage = availableModalImages[currentModalImageIndex];
+
+                const modalImg = document.getElementById('modalImage');
+                modalImg.src = nextImage.originalUrl;
+            }
+
+            function showPreviousImage() {
+                if (availableModalImages.length === 0 || currentModalImageIndex === -1) {
+                    return;
+                }
+
+                currentModalImageIndex = (currentModalImageIndex - 1 + availableModalImages.length) % availableModalImages.length;
+                const prevImage = availableModalImages[currentModalImageIndex];
+
+                const modalImg = document.getElementById('modalImage');
+                modalImg.src = prevImage.originalUrl;
+            }
+
+            galleryCanvas.addEventListener('mousemove', handlePointerMove);
+            galleryCanvas.addEventListener('mouseleave', handlePointerLeave);
+            galleryCanvas.addEventListener('click', handleClick);
+
+            // Modal event listeners
+            const closeModalBtn = document.getElementById('closeModal');
+            const imageModal = document.getElementById('imageModal');
+
+            // Close button click
+            closeModalBtn.addEventListener('click', closeImageModal);
+
+            // Click outside image to close
+            imageModal.addEventListener('click', function (event) {
+                if (event.target === imageModal) {
+                    closeImageModal();
+                }
+            });
+
+            // Keyboard navigation
+            document.addEventListener('keydown', function (event) {
+                const modal = document.getElementById('imageModal');
+                const isModalOpen = modal.classList.contains('show');
+
+                if (!isModalOpen) {
+                    return;
+                }
+
+                switch (event.key) {
+                    case 'Escape':
+                        closeImageModal();
+                        break;
+                    case 'ArrowLeft':
+                        event.preventDefault();
+                        showPreviousImage();
+                        break;
+                    case 'ArrowRight':
+                        event.preventDefault();
+                        showNextImage();
+                        break;
+                }
+            });
+
+            // Pick a random card and open its link
+            function pickRandomCard() {
+                if (animatingImages.length === 0) {
+                    console.log('No images in gallery to pick');
+                    return { success: false };
+                }
+
+                // Filter out faded out images
+                const availableImages = animatingImages.filter(img =>
+                    img.fadeOutProgress < 0.5 && img.animationComplete
+                );
+
+                if (availableImages.length === 0) {
+                    console.log('No available images to pick (all faded out or still animating)');
+                    return { success: false };
+                }
+
+                // Pick a random image
+                const randomIndex = Math.floor(Math.random() * availableImages.length);
+                const selectedImage = availableImages[randomIndex];
+
+                console.log('Picked random card:', selectedImage.originalUrl);
+
+                // Personal touch comments (will be randomly selected)
+                // Diverse responses with varying lengths and styles
+                const comments = [
+                    "this one is interesting",
+                    "that's a unique one",
+                    "this one caught my eye",
+                    "here's a good one",
+                    "oh, I like this one. It stands out",
+                    "this one looks particularly nice",
+                    "let me show you this one. It's quite striking",
+                    "here's a fascinating one I found",
+                    "this one has something special about it",
+                    "I think you'll like this one. It's captivating",
+                    "oh, this is a great choice. Very interesting",
+                    "look at this one. Pretty remarkable",
+                    "here's one that really stands out",
+                    "this caught my attention. Take a look",
+                    "found a good one here. Check this out",
+                    "this one's worth seeing. Quite unique",
+                    "I'll pick this one for you. It's excellent",
+                    "here you go. This one's particularly striking",
+                    "oh, definitely this one. It's intriguing",
+                    "take a look at this. Very compelling",
+                    "this one here. I think it's the most interesting",
+                    "found something good. This one's worth your time",
+                    "let's go with this one. Really catches the eye",
+                    "here's my pick. It has a certain quality to it",
+                    "this one right here. Pretty impressive"
+                ];
+
+                const randomComment = comments[Math.floor(Math.random() * comments.length)];
+
+                // Highlight the selected image briefly
+                selectedImage.setHovered(true);
+
+                // Open the image in modal after a short delay
+                setTimeout(() => {
+                    if (selectedImage.originalUrl) {
+                        openImageModal(selectedImage.originalUrl);
+                    }
+                    selectedImage.setHovered(false);
+                }, 300);
+
+                return {
+                    success: true,
+                    comment: randomComment
+                };
+            }
+
+            // Check if there are visible images on screen
+            function hasVisibleImages() {
+                return animatingImages.length > 0 &&
+                    !animatingImages.every(img => img.fadeOutComplete) &&
+                    galleryCanvas.style.display !== 'none';
+            }
+
+            // Expose functions to window for external access
+            window.imageGallery = {
+                loadImages: loadImages,
+                fadeOutSequentially: fadeOutSequentially,
+                pickRandomCard: pickRandomCard,
+                openImageModal: openImageModal,
+                closeImageModal: closeImageModal,
+                showNextImage: showNextImage,
+                showPreviousImage: showPreviousImage,
+                hasVisibleImages: hasVisibleImages
+            };
+        })();
+    </script>
+</body>
+
+</html>

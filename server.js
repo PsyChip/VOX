@@ -1,0 +1,1852 @@
+/*
+todo: websockets for real-time typing indicator
+implement websockets
+send realtime transcript to websocket endpoint
+
+activate system prompt instructions on demand (heuristically) if user tend to make a feedback, activate the tune-behaviour system prompt
+
+add example interactions to every third party tool call, remove example interactions from client side tools
+
+activate parts of system prompt based on device type and screen orientation
+*/
+
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const readline = require("readline");
+const path = require("path");
+const Reader = require('@maxmind/geoip2-node').Reader;
+const fs = require("fs");
+const crypto = require('crypto');
+const cookieParser = require('cookie-parser');
+const { encoding_for_model } = require('tiktoken');
+const UAParser = require('ua-parser-js');
+
+dotenv.config();
+
+const mmcity = Reader.openBuffer(fs.readFileSync('./db/GeoLite2-City.mmdb'));
+const mmasn = Reader.openBuffer(fs.readFileSync('./db/GeoLite2-ASN.mmdb'));
+const currencyMap = JSON.parse(fs.readFileSync('./db/currency.json', 'utf8'));
+const apiEndpoints = JSON.parse(fs.readFileSync('./db/api.json', 'utf8'));
+const lname = JSON.parse(fs.readFileSync('./db/lang.json', 'utf8'));
+
+var sessions = {};
+
+// Token counting configuration
+const CONTEXT_LENGTH = parseInt(process.env.CONTEXT_LENGTH) || 128000; // Default 128k tokens, user can set via .env
+let tokenEncoder = null;
+
+// Initialize tiktoken encoder (lazy loading)
+function getTokenEncoder() {
+    if (!tokenEncoder) {
+        try {
+            // Use GPT-4 encoding (cl100k_base) which is compatible with most modern models
+            tokenEncoder = encoding_for_model('gpt-4');
+            console.log('[TIKTOKEN] Encoder initialized: cl100k_base');
+        } catch (error) {
+            console.error('[TIKTOKEN] Failed to initialize encoder:', error.message);
+        }
+    }
+    return tokenEncoder;
+}
+
+// Count tokens in a text string
+function countTokens(text) {
+    try {
+        const encoder = getTokenEncoder();
+        if (!encoder) {
+            console.warn('[TIKTOKEN] Encoder not available, returning character-based estimate');
+            return Math.ceil(text.length / 4); // Rough estimate: 1 token ≈ 4 characters
+        }
+        const tokens = encoder.encode(text);
+        return tokens.length;
+    } catch (error) {
+        console.error('[TIKTOKEN] Error counting tokens:', error.message);
+        return Math.ceil(text.length / 4); // Fallback estimate
+    }
+}
+
+var md5 = function (text) {
+    return crypto.createHash('md5').update(text).digest("hex");
+};
+const randInt = (min, max) => {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+};
+
+async function reverseGeocode(lat, lon, apiKey) {
+    const url = apiEndpoints.google_maps.reverse_geocode.render({
+        "lat": lat,
+        "lon": lon,
+        "GPLACES_KEY": apiKey
+    });
+
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.status === "OK") {
+            const address = data.results[0].formatted_address;
+            console.log("Address:", address);
+            return address;
+        } else {
+            console.error("Geocoding failed:", data.status, data.error_message);
+            return null;
+        }
+    } catch (error) {
+        console.error("Error fetching geocode data:", error);
+        return null;
+    }
+}
+
+function getTimeZoneName(offset) {
+    const sign = offset >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offset);
+    const hours = Math.floor(absOffset);
+    const minutes = Math.round((absOffset - hours) * 60);
+
+    const paddedHours = String(hours).padStart(2, '0');
+    const paddedMinutes = String(minutes).padStart(2, '0');
+
+    return `UTC${sign}${paddedHours}:${paddedMinutes}`;
+}
+
+function convertSeconds(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    const hoursText = hours > 0 ? `${hours} hour${hours !== 1 ? 's' : ''}` : '';
+    const minutesText = minutes > 0 ? `${minutes} minute${minutes !== 1 ? 's' : ''}` : '';
+
+    if (hours && minutes) {
+        return `${hoursText}, ${minutesText}`;
+    } else if (hours) {
+        return hoursText;
+    } else if (minutes) {
+        return minutesText;
+    } else {
+        return '0 minutes';
+    }
+}
+
+function getUserCurrency(countryCode) {
+    if (!countryCode) return 'USD';
+    const currencyData = currencyMap[countryCode];
+    return currencyData ? currencyData.currency_code : 'USD';
+}
+
+/**
+ * Parse user agent and format it as "Browser Version on OS with CPU"
+ * Example: "Chrome 141 on Windows 11 with amd64"
+ * @param {string} userAgentString - The user agent string from request headers
+ * @returns {string} Formatted user agent info
+ */
+function parseUserAgent(userAgentString) {
+    if (!userAgentString || userAgentString === "Unknown") {
+        return "Unknown browser";
+    }
+
+    const parser = new UAParser(userAgentString);
+    const result = parser.getResult();
+
+    const browser = result.browser?.name || 'Unknown browser';
+    const browserVersion = result.browser?.major || '';
+    const os = result.os?.name || 'Unknown OS';
+    const osVersion = result.os?.version || '';
+    const cpu = result.cpu?.architecture || '';
+
+    // Build formatted string: "Browser Version on OS Version with CPU"
+    let formatted = browser;
+
+    if (browserVersion) {
+        formatted += ` ${browserVersion}`;
+    }
+
+    if (os !== 'Unknown OS') {
+        formatted += ` on ${os}`;
+        if (osVersion) {
+            formatted += ` ${osVersion}`;
+        }
+    }
+
+    if (cpu) {
+        formatted += ` with ${cpu}`;
+    }
+
+    return formatted;
+}
+
+var distance = function (lat1, lon1, lat2, lon2, unit) {
+    unit = unit || "M"; // Default to meters
+    var radlat1 = Math.PI * lat1 / 180;
+    var radlat2 = Math.PI * lat2 / 180;
+    var radlon1 = Math.PI * lon1 / 180;
+    var radlon2 = Math.PI * lon2 / 180;
+    var theta = lon1 - lon2;
+    var radtheta = Math.PI * theta / 180;
+    var dist = Math.sin(radlat1) * Math.sin(radlat2) +
+        Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
+    dist = Math.acos(dist);
+    dist = dist * 180 / Math.PI; // convert to degrees
+    dist = dist * 60 * 1.1515;   // convert to miles
+
+    if (unit === "K") {
+        dist = dist * 1.609344;   // kilometers
+    } else if (unit === "N") {
+        dist = dist * 0.8684;     // nautical miles
+    } else if (unit === "M") {
+        dist = dist * 1.609344 * 1000; // meters
+    }
+
+    return dist;
+};
+
+/**
+ * Initialize user directory and create profile files on first tool call
+ * @param {string} uid - User ID (32 character hash)
+ * @param {string} systemPrompt - The rendered system prompt for this user
+ */
+function initializeUserDirectory(uid, systemPrompt) {
+    const userDirPath = path.join(__dirname, './user', uid);
+
+    // Check if directory already exists
+    if (fs.existsSync(userDirPath)) {
+        return false; // Already initialized
+    }
+
+    try {
+        // Create user directory
+        fs.mkdirSync(userDirPath, { recursive: true });
+        console.log(`[USER-INIT] Created directory: ${userDirPath}`);
+
+        // Create profile.md
+        const profileContent = `# User Profile
+
+**User ID**: ${uid}
+**Created**: ${new Date().toISOString()}
+
+## Profile Information
+- Language: ${sessions["_" + uid]?.lang || 'Unknown'}
+- Location: ${sessions["_" + uid]?.city || 'Unknown'}
+- Currency: ${sessions["_" + uid]?.currency || 'Unknown'}
+- User Name: ${sessions["_" + uid]?.userName || 'Anonymous'}
+- Coordinates: ${sessions["_" + uid]?.lat || 0}, ${sessions["_" + uid]?.lon || 0}
+
+## Notes
+This file contains user profile information and preferences.
+`;
+
+        fs.writeFileSync(path.join(userDirPath, 'profile.md'), profileContent, 'utf8');
+        console.log(`[USER-INIT] Created profile.md for uid: ${uid}`);
+
+        // Create transcript.md
+        const transcriptContent = `# Conversation Transcript
+
+**User ID**: ${uid}
+**Started**: ${new Date().toISOString()}
+
+---
+
+## Conversation Log
+`;
+
+        fs.writeFileSync(path.join(userDirPath, 'transcript.md'), transcriptContent, 'utf8');
+        console.log(`[USER-INIT] Created transcript.md for uid: ${uid}`);
+
+        // Create system.md with the crafted system prompt
+        fs.writeFileSync(path.join(userDirPath, 'system.md'), systemPrompt, 'utf8');
+        console.log(`[USER-INIT] Created system.md for uid: ${uid}`);
+
+        console.log(`[USER-INIT] Successfully initialized user directory for uid: ${uid}`);
+        return true; // Successfully initialized
+    } catch (error) {
+        console.error(`[USER-INIT] Error initializing user directory for uid ${uid}:`, error.message);
+        return false;
+    }
+}
+
+String.prototype.explode = function (c, n) {
+    if (this.indexOf(c) > -1) {
+        return this.split(c)[n];
+    }
+    return this;
+};
+
+String.prototype.render = function (v, prefix) {
+    var s = this, m, re;
+
+    while ((m = /{{#if\s+([^}]+)}}([\s\S]*?){{\/if}}/g.exec(s))) {
+        var condKey = m[1].trim();
+        var condContent = m[2];
+        var condValue = v[condKey];
+        var shouldInclude = condValue &&
+            condValue !== "undefined" &&
+            condValue !== "null" &&
+            condValue !== "" &&
+            (typeof condValue !== "string" || condValue.length >= 1);
+        s = s.replace(m[0], shouldInclude ? condContent : "");
+    }
+
+    re = new RegExp('{{' + (prefix || "") + '([^}]+)?}}', 'g');
+    while ((m = re.exec(s))) {
+        if (typeof v[m[1]] === "undefined") {
+            v[m[1]] = "";
+        }
+        s = s.replace(m[0], v[m[1]]);
+        re.lastIndex = 0;
+    }
+
+    return s;
+};
+
+
+function geoip(ip) {
+    if (ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1") {
+        console.log("Localhost IP detected, returning sample ip");
+        ip = "217.9.109.94";
+    }
+
+    var geo;
+    var asn;
+    var obj = { "result": false };
+    var err;
+    try {
+        geo = mmcity.city(ip);
+        asn = mmasn.asn(ip);
+    } catch (e) {
+        console.log(e);
+        err = true;
+    } finally {
+        if (!err) {
+            obj.flag = geo?.country?.isoCode;
+            obj.country = geo?.country?.names.en;
+            obj.city = geo?.city?.names?.en;
+            obj.lat = geo?.location?.latitude;
+            obj.lon = geo?.location?.longitude;
+            obj.asn = asn?.autonomousSystemNumber;
+            obj.org = asn?.autonomousSystemOrganization;
+            obj.vpn = geo?.traits?.isAnonymousProxy || false;
+            obj.result = true;
+        }
+    }
+    return obj;
+}
+
+/**
+ * Calculate bounding box (lamin, lamax, lomin, lomax)
+ * within a given radius (km) around a coordinate.
+ *
+ * @param {number} lat - Center latitude in degrees
+ * @param {number} lon - Center longitude in degrees
+ * @param {number} radiusKm - Radius in kilometers (e.g., 16)
+ * @returns {Object} Bounding box coordinates
+ */
+function getBoundingBox(lat, lon, radiusKm = 16) {
+    // Ensure lat and lon are numbers
+    lat = Number(lat);
+    lon = Number(lon);
+
+    const earthRadiusKm = 6371; // Earth's average radius
+    const degLatPerKm = 1 / 111.32; // Roughly constant
+
+    // Δlatitude in degrees
+    const deltaLat = radiusKm * degLatPerKm;
+
+    // Δlongitude in degrees (depends on latitude)
+    const degLonPerKm = 1 / (111.32 * Math.cos(lat * Math.PI / 180));
+    const deltaLon = radiusKm * degLonPerKm;
+
+    // Bounding box with 6 decimal places precision
+    const lamin = parseFloat((lat - deltaLat).toFixed(6));
+    const lamax = parseFloat((lat + deltaLat).toFixed(6));
+    const lomin = parseFloat((lon - deltaLon).toFixed(6));
+    const lomax = parseFloat((lon + deltaLon).toFixed(6));
+
+    return { lamin, lamax, lomin, lomax };
+}
+
+
+function getDateDetails() {
+    const now = new Date();
+
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+
+    const currentLang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
+    const localePath = path.join(__dirname, `./content/${currentLang}/date.json`);
+    let dayNames;
+    let monthNames;
+
+    try {
+        if (fs.existsSync(localePath)) {
+            const dateLocale = JSON.parse(fs.readFileSync(localePath, "utf8"));
+            if (Array.isArray(dateLocale.dayNames) && dateLocale.dayNames.length === 7) {
+                dayNames = dateLocale.dayNames;
+            }
+            if (Array.isArray(dateLocale.monthNames) && dateLocale.monthNames.length === 12) {
+                monthNames = dateLocale.monthNames;
+            }
+        }
+    } catch (e) {
+        console.warn(`Failed to load date locale from ${localePath}, falling back to defaults.`);
+    }
+
+    const dayName = dayNames[now.getDay()];
+    const monthName = monthNames[now.getMonth()];
+
+    return { day, month, year, dayName, monthName };
+}
+
+const requiredEnvVars = ["XI_API_KEY", "AGENT_ID"];
+const missingEnv = requiredEnvVars.filter(
+    (k) => !process.env[k] || String(process.env[k]).trim() === ""
+);
+
+if (missingEnv.length > 0) {
+    const envPath = path.join(__dirname, ".env");
+
+    const isInteractivePlatform = ["darwin", "win32"].includes(process.platform);
+    const shouldPrompt = isInteractivePlatform && process.stdin.isTTY && !fs.existsSync(envPath);
+
+    if (shouldPrompt) {
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        const ask = (q) => new Promise((resolve) => rl.question(q, (ans) => resolve(ans.trim())));
+
+        (async () => {
+            try {
+                console.log("No .env found. Let's set it up.");
+                console.log("Press Enter to accept defaults when shown in brackets.\n");
+
+                const xi = await ask("XI_API_KEY (required): ");
+                const agent = await ask("AGENT_ID (required): ");
+                let port = await ask("PORT [3000]: ");
+                if (!port) port = "3000";
+                let lang = await ask("AGENT_LANGUAGE [en] (supported: en, tr): ");
+                if (!lang) lang = "en";
+                lang = lang.toLowerCase();
+                if (!["en", "tr"].includes(lang)) {
+                    console.warn(`Unsupported AGENT_LANGUAGE '${lang}', defaulting to 'en'.`);
+                    lang = "en";
+                }
+
+                const lines = [
+                    "# Environment configuration for the VOX server",
+                    `XI_API_KEY=${xi}`,
+                    `AGENT_ID=${agent}`,
+                    `PORT=${port}`,
+                    `AGENT_LANGUAGE=${lang}`,
+                    "",
+                    "# Optional: Context length for token counting (default: 128000)",
+                    "# CONTEXT_LENGTH=128000",
+                    ""
+                ];
+
+                fs.writeFileSync(envPath, lines.join("\n"), { flag: "wx" });
+                console.log(`.env created at ${envPath}`);
+
+                if (!xi || !agent) {
+                    console.error("Required values missing. Please edit .env and restart the server.");
+                    process.exit(1);
+                }
+
+                console.log("Environment configured. Please restart the server.");
+                process.exit(0);
+            } catch (e) {
+                console.error("Failed to create .env interactively:", e?.message || e);
+                process.exit(1);
+            } finally {
+                rl.close();
+            }
+        })();
+    } else {
+        // Fallback: scaffold .env if missing, then exit with instructions
+        try {
+            if (!fs.existsSync(envPath)) {
+                const scaffold = [
+                    "# Environment configuration for the VOX server",
+                    "# Fill in the required values and restart the server.",
+                    "",
+                    "# ElevenLabs API key",
+                    "XI_API_KEY=<add your api key>",
+                    "",
+                    "# ElevenLabs Convai Agent ID",
+                    "AGENT_ID=<add your agent id>",
+                    "",
+                    "# Optional: Port to run the server on (defaults to 3000)",
+                    "# PORT=3000",
+                    "",
+                    "# Optional: Agent language (default 'en'; supported: en, tr)",
+                    "# AGENT_LANGUAGE=en",
+                    "",
+                    "# Optional: Context length for token counting (default: 128000)",
+                    "# Common values: 128000 (GPT-4), 32000 (GPT-4-32k), 8192 (older models)",
+                    "# CONTEXT_LENGTH=128000"
+                ].join("\n");
+                fs.writeFileSync(envPath, scaffold, { flag: "wx" });
+            }
+        } catch (e) {
+            console.error("Failed to scaffold .env:", e?.message || e);
+        }
+
+        console.error(
+            `Missing required environment variables: ${missingEnv.join(", ")}`
+        );
+        console.error(
+            "A .env file has been created/scaffolded in the project root. " +
+            "Please fill in the required values and restart the server."
+        );
+        process.exit(1);
+    }
+}
+const microtime = () => new Date().getTime();
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.use(cookieParser());
+
+const trustProxy = true;
+app.set('trust proxy', trustProxy);
+
+app.use("/static", express.static(path.join(__dirname, "./dist")));
+
+// Serve manifest.json for PWA support
+app.get("/manifest.json", (req, res) => {
+    res.sendFile(path.join(__dirname, "./dist/manifest.json"));
+});
+
+app.get("/api/signed-url/:userdata", async (req, res) => {
+    console.log("-- initializing system prompt..");
+
+    req.timestamp = microtime();
+    req.ip = (req.headers["x-forwarded-for"] ||
+        req.headers["x-real-ip"] ||
+        req.headers["x-client-ip"] ||
+        req.connection.remoteAddress ||
+        req.socket?.remoteAddress ||
+        req.connection.socket?.remoteAddress).toString().split(",")[0].replace("::ffff:", "").trim();
+    console.log("-- request from IP:", req.ip);
+
+    var geo = geoip(req.ip);
+    var today = getDateDetails();
+    const promptPath = path.join(__dirname, `./content/system.md`);
+
+    // Decode URL-safe base64 (convert _ to / and - to +, add padding if needed)
+    let base64 = req.params.userdata
+        .replace(/_/g, '/')
+        .replace(/-/g, '+');
+    // Add padding if needed
+    while (base64.length % 4) {
+        base64 += '=';
+    }
+    const userdata = Buffer.from(base64, 'base64').toString('utf8').split('|');
+
+    const dayPhase = userdata[0] || "day";
+    const lat = userdata[1] || 0;
+    const lon = userdata[2] || 0;
+    const time = userdata[3] || "00:00";
+    const timezone = userdata[4] || 0;
+    const geostate = userdata[5] || 0;
+    const geohint = userdata[6] || 0;
+    const userName = userdata[7] || '';
+    const userTime = parseInt(userdata[8]) || 0;
+    const lastVisit = parseInt(userdata[9]) || 0;
+    var lastTopicTitle = userdata[10] || '';
+    const lastTopicTimestamp = parseInt(userdata[11]) || 0;
+    const prefLang = userdata[12] || 0;
+    var voiceId = process.env["VOICE_" + prefLang.toString().toUpperCase()] || process.env.VOICE_EN;
+    const characterPath = path.join(__dirname, `./content/${prefLang}/agent.md`);
+    const uidQuery = userdata[13] || "0";
+
+    const geoleft = parseInt(geostate.explode(":", 1));
+    var geocomment = "";
+    if (geoleft > 60 && geoleft < 14400) {
+        geocomment = geostate.explode(":", 0) + " in " + convertSeconds(geostate.explode(":", 1)) + ".";
+    } else {
+        geocomment = (geohint.explode(",", 0) === "1" ? "Tonight, the full moon shines brightly overhead." : (geohint.explode(",", 1) === "1" ? "Beware the noon sun, blazing straight overhead." : ""));
+    }
+
+    // Check if topic is older than 5 minutes (300000ms)
+    let lastTopicComment = null;
+    if (lastTopicTitle && lastTopicTimestamp) {
+        const topicAge = Date.now() - lastTopicTimestamp;
+        const fiveMinutes = 5 * 60 * 1000;
+
+        if (topicAge < fiveMinutes) {
+            lastTopicComment = `Last conversation topic was about: ${lastTopicTitle}`;
+            console.log(`-- Using topic from ${Math.floor(topicAge / 1000)} seconds ago: ${lastTopicTitle}`);
+        } else {
+            console.log(`-- Ignoring topic from ${Math.floor(topicAge / 1000)} seconds ago (older than 5 minutes)`);
+            lastTopicComment = null;
+            lastTopicTitle = null;
+        }
+    }
+
+    var lat_final = (lat !== 0 ? lat : (geo.lat || 0.00));
+    var lon_final = (lon !== 0 ? lon : (geo.lon || 0.00));
+
+    // Get and parse user agent
+    const userAgentString = req.headers["user-agent"] || "Unknown";
+    const userAgent = parseUserAgent(userAgentString);
+
+    console.log(`[USER-AGENT] Raw: ${userAgentString}`);
+    console.log(`[USER-AGENT] Parsed: ${userAgent}`);
+
+    var system_prompt = fs.readFileSync(promptPath, "utf8").trim().render(
+        {
+            date: today.day + " " + today.monthName + " " + today.year,
+            day: today.dayName,
+            time: time,
+            location: (geo.city ? geo.city + ", " : "") + (geo.country || "Unknown"),
+            country: geo.country || "Unknown",
+            city: geo.city || "Unknown",
+            lat: lat_final.toString(),
+            lon: lon_final.toString(),
+            agent: fs.readFileSync(characterPath, "utf8").trim(),
+            language: lname[prefLang] || prefLang,
+            timezone: getTimeZoneName(Number(timezone)),
+            geocomment: geocomment,
+            currency: getUserCurrency(geo.flag),
+            userName: userName,
+            lastTopic: lastTopicComment,
+            userAgent: userAgent
+        }
+    );
+
+    // Determine uid: prioritize uidQuery if valid, then check sid cookie, otherwise generate new
+    let uid;
+    let shouldUpdateCookie = false;
+    const cookieSid = req.cookies.sid;
+
+    // Check if uidQuery is valid (not "0", not null/undefined, exactly 32 characters)
+    if (uidQuery && uidQuery !== "0" && uidQuery !== "null" && uidQuery !== "undefined" && uidQuery.length === 32) {
+        uid = uidQuery;
+        console.log(`[UID] Using uidQuery from client: ${uid}`);
+
+        // Cross-check with sid cookie
+        if (cookieSid && cookieSid !== uid) {
+            console.warn(`[UID] WARNING: Cookie sid (${cookieSid}) does not match uidQuery (${uid}). Using uidQuery and updating cookie.`);
+            shouldUpdateCookie = true;
+        } else if (!cookieSid) {
+            // No cookie exists, need to set it
+            shouldUpdateCookie = true;
+        }
+    } else {
+        // Generate new uid
+        uid = md5(req.headers["user-agent"] + req.ip + randInt(11111, 99999));
+        console.log(`[UID] Generated new uid: ${uid}`);
+        shouldUpdateCookie = true;
+    }
+
+    sessions["_" + uid] = {
+        lang: prefLang,
+        lat: lat_final,
+        lon: lon_final,
+        city: geo.city || "Unknown",
+        currency: getUserCurrency(geo.flag),
+        userName: userName,
+        systemPrompt: system_prompt  // Store system prompt for user directory initialization
+    };
+
+    //    fs.writeFileSync(path.join(__dirname, "./last_system_prompt.md"), system_prompt);
+    console.log("-- system prompt initialized.");
+
+    // Count tokens in system prompt
+    const tokenCount = countTokens(system_prompt);
+    const contextUsedPercent = ((tokenCount / CONTEXT_LENGTH) * 100).toFixed(2);
+    const contextLeftPercent = (100 - contextUsedPercent).toFixed(2);
+
+    console.log(`[TOKEN USAGE]`);
+    console.log(`  Tokens used: ${tokenCount.toLocaleString()}`);
+    console.log(`  Context length: ${CONTEXT_LENGTH.toLocaleString()}`);
+    console.log(`  Context used: ${contextUsedPercent}%`);
+    console.log(`  Context remaining: ${contextLeftPercent}%`);
+
+    // Load and render drift reminders
+    const drift_prompt = fs.readFileSync("./content/system-reminder.md", "utf8").trim().render(
+        {
+            date: today.day + " " + today.monthName + " " + today.year,
+            day: today.dayName,
+            time: time,
+            location: (geo.city ? geo.city + ", " : "") + (geo.country || "Unknown"),
+            country: geo.country || "Unknown",
+            city: geo.city || "Unknown",
+            lat: (lat !== 0 ? lat : (geo.lat || 0.00)).toString(),
+            lon: (lon !== 0 ? lon : (geo.lon || 0.00)).toString(),
+            language: lname[prefLang] || prefLang,
+            timezone: getTimeZoneName(Number(timezone)),
+            geocomment: geocomment,
+            currency: getUserCurrency(geo.flag),
+            userName: userName
+        }
+    );
+    console.log("-- drift reminders loaded.");
+
+    // Get random greeting based on user state
+    const greetings = JSON.parse(fs.readFileSync("./content/" + prefLang + "/greetings.json", "utf8"));
+
+    let greetingPool;
+
+    // Check if there's a topic to resume
+    if (lastTopicTitle !== null && lastVisit > 0) {
+        greetingPool = greetings.resume || [];
+    }
+    // First time user
+    else if (userName && lastVisit === 0) {
+        greetingPool = greetings.firstTime || [];
+    }
+    // Known user
+    else if (userName) {
+        const knownGreetings = greetings.known || {};
+        greetingPool = knownGreetings[dayPhase] || knownGreetings.day || [];
+    }
+    // Anonymous user
+    else {
+        const anonGreetings = greetings.anonymous || {};
+        greetingPool = anonGreetings[dayPhase] || anonGreetings.day || [];
+    }
+
+    let randomGreeting = greetingPool[Math.floor(Math.random() * greetingPool.length)] || "Hello";
+
+    // Replace {{topic}} placeholder if present
+    if (lastTopicTitle) {
+        randomGreeting = randomGreeting.replace('{{topic}}', lastTopicTitle);
+    }
+
+    // Replace {{name}} placeholder if present
+    if (userName) {
+        randomGreeting = randomGreeting.replace('{{name}}', userName);
+    }
+
+    if (randomGreeting.indexOf("{") > -1) {
+        const xanonGreetings = greetings.anonymous || {};
+        greetingPool = xanonGreetings[dayPhase] || xanonGreetings.day || [];
+        randomGreeting = greetingPool[Math.floor(Math.random() * greetingPool.length)] || "Hello";
+    }
+
+    var payload = {
+        system: system_prompt,
+        firstMessage: randomGreeting.replaceAll("{", "").replaceAll("}", "").replaceAll(/\s+/g, ' ').trim(),
+        drift: drift_prompt,
+        voiceId: voiceId,
+    };
+    try {
+        console.log('[ELEVENLABS] Starting signed URL request...');
+        console.log('[ELEVENLABS] Agent ID:', process.env.AGENT_ID);
+
+        const url = apiEndpoints.elevenlabs.signed_url.replace('{{AGENT_ID}}', process.env.AGENT_ID);
+        console.log('[ELEVENLABS] Request URL:', url);
+        console.log('[ELEVENLABS] API Key present:', !!process.env.XI_API_KEY);
+        console.log('[ELEVENLABS] API Key length:', process.env.XI_API_KEY ? process.env.XI_API_KEY.length : 0);
+
+        const startTime = Date.now();
+        const response = await fetch(
+            url,
+            {
+                method: "GET",
+                headers: {
+                    "xi-api-key": process.env.XI_API_KEY,
+                },
+            }
+        );
+        const requestTime = Date.now() - startTime;
+        console.log('[ELEVENLABS] Request completed in', requestTime, 'ms');
+        console.log('[ELEVENLABS] Response status:', response.status, response.statusText);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[ELEVENLABS] Error response body:', errorText);
+            throw new Error(`Failed to get signed URL: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        console.log('[ELEVENLABS] Signed URL received:', data.signed_url ? 'YES' : 'NO');
+        console.log('[ELEVENLABS] Signed URL length:', data.signed_url ? data.signed_url.length : 0);
+
+        payload.signedUrl = data.signed_url;
+        payload.uid = uid;
+
+        // Only update cookie if needed
+        if (shouldUpdateCookie) {
+            res.cookie('sid', uid, {
+                httpOnly: true,
+                sameSite: 'lax',
+                maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
+            });
+            console.log(`[COOKIE] Updated sid cookie to: ${uid}`);
+        }
+
+        console.log('[ELEVENLABS] Payload prepared, sending to client');
+        res.json(payload);
+        console.log('[ELEVENLABS] Response sent successfully');
+    } catch (error) {
+        console.error('[ELEVENLABS] Error occurred:', error.message);
+        console.error('[ELEVENLABS] Error stack:', error.stack);
+        res.status(500).json({ error: "Failed to get signed URL", details: error.message });
+    }
+});
+
+app.post("/api/user-init", (req, res) => {
+    const sid = req.cookies.sid;
+    if (!sid || !sessions["_" + sid]) {
+        return res.status(403).json({ error: "Invalid or missing session ID" });
+    }
+
+    // Initialize user directory on first user message
+    if (sessions["_" + sid].systemPrompt) {
+        const initialized = initializeUserDirectory(sid, sessions["_" + sid].systemPrompt);
+        if (initialized) {
+            console.log(`[USER-INIT] Directory initialized for uid: ${sid}`);
+            return res.json({ success: true, message: "User directory initialized" });
+        } else {
+            return res.json({ success: false, message: "Directory already exists or initialization failed" });
+        }
+    } else {
+        return res.status(400).json({ error: "System prompt not available in session" });
+    }
+});
+
+app.get("/api/sentence/:event", (req, res) => {
+
+    const sid = req.cookies.sid;
+    if (!sid || !sessions["_" + sid]) {
+        return res.status(403).json({ error: "Invalid or missing session ID" });
+    }
+
+    // Extend cookie expiration by 1 year on every visit
+    res.cookie('sid', sid, {
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
+    });
+
+    const event = req.params.event;
+    const eventPath = path.join(__dirname, `./content/${sessions["_" + sid].lang}/audio/${event}`);
+
+    if (fs.existsSync(eventPath)) {
+        const stats = fs.statSync(eventPath);
+
+
+        if (stats.isDirectory()) {
+            const files = fs.readdirSync(eventPath).filter(file =>
+                file.endsWith('.ogg') || file.endsWith('.mp3') || file.endsWith('.wav')
+            );
+
+            if (files.length > 0) {
+                const randomFile = files[Math.floor(Math.random() * files.length)];
+                const filePath = path.join(eventPath, randomFile);
+
+                return res.sendFile(filePath);
+            }
+        }
+    }
+
+    return res.status(404).json({ error: "unknown event" });
+});
+
+function formatToolResponse(cmd, param, result) {
+    return fs.readFileSync("./content/tool-response.md", "utf8").trim().render(
+        {
+            command: cmd,
+            parameter: param,
+            result: JSON.stringify(result)
+        }
+    );
+}
+
+app.get("/api/tool/image-search/:query", async (req, res) => {
+    const query = req.params.query?.trim();
+    const apiKey = process.env.SERPAPI_KEY;
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+    }
+
+    if (!query) {
+        return res.status(400).json({ error: "Query parameter is required" });
+    }
+
+    try {
+        const url = apiEndpoints.serpapi.image_search.render({
+            "SERPAPI_KEY": apiKey,
+            "query": encodeURIComponent(query)
+        });
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`SerpAPI request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        const imageResults = Array.isArray(data?.images_results) ? data.images_results : [];
+
+        const results = imageResults
+            .map((item) => ({
+                thumbnail: item?.thumbnail,
+                original: item?.original
+            }))
+            .filter((item) => item.thumbnail && item.original)
+            .slice(0, 25);
+
+        console.log(`[IMAGE-SEARCH] Query: "${query}" - Found ${results.length} results`);
+        console.log('[IMAGE-SEARCH] Results:', JSON.stringify(results, null, 2));
+
+        return res.send(results);
+    } catch (error) {
+        console.error("Image search error:", error);
+        return res.status(502).json({ error: "Failed to fetch image results" });
+    }
+});
+
+app.get("/api/tool/web-search/:query", async (req, res) => {
+    const query = req.params.query?.trim();
+    const apiKey = process.env.SERPAPI_KEY;
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+    }
+
+    if (!query) {
+        return res.status(400).json({ error: "Query parameter is required" });
+    }
+
+    try {
+        const url = apiEndpoints.serpapi.web_search.render({
+            "SERPAPI_KEY": apiKey,
+            "query": encodeURIComponent(query)
+        });
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`SerpAPI request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return res.send(formatToolResponse("web-search", query, data));
+    } catch (error) {
+        console.error("Web search error:", error);
+        return res.status(502).json({ error: "Failed to fetch search results" });
+    }
+});
+
+app.get("/api/tool/visible-aircraft/:location", async (req, res) => {
+    const sid = req.cookies.sid;
+    if (!sid || !sessions["_" + sid]) {
+        return res.status(403).json({ error: "Invalid or missing session ID" });
+    }
+
+    // Extend cookie expiration by 1 year on every visit
+    res.cookie('sid', sid, {
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
+    });
+
+    var lat = sessions["_" + sid].lat;
+    var lon = sessions["_" + sid].lon;
+    console.log(`[AIRCRAFT] Fetching aircraft near ${lat},${lon}`);
+    // Get bounding box around the coordinates (16 km radius)
+    const { lamin, lamax, lomin, lomax } = getBoundingBox(lat, lon, 30);
+    const url = apiEndpoints.opensky.aircraft_states.render({
+        "lamin": lamin,
+        "lamax": lamax,
+        "lomin": lomin,
+        "lomax": lomax
+    });
+    try {
+        console.log(url);
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`OpenSky API request failed with status ${response.status}`);
+        }
+        const data = await response.json();
+        // Use center coordinates for the parameter (user's actual location)
+        return res.send(formatToolResponse("visible-aircraft", `${lat},${lon}`, data));
+    } catch (error) {
+        console.error("OpenSky API error:", error);
+        return res.status(502).json({ error: "Failed to fetch aircraft data" });
+    }
+});
+
+app.get("/api/tool/get-weather/:location", async (req, res) => {
+    const location = req.params.location?.trim();
+    const apiKey = process.env.OPENWEATHER_KEY;
+
+    if (!location) {
+        return res.status(400).json({ error: "Location parameter is required" });
+    }
+
+    try {
+        const url = apiEndpoints.openweather.current_weather.render({
+            "OPENWEATHER_KEY": apiKey,
+            "location": encodeURIComponent(location)
+        });
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`Weather API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return res.send(formatToolResponse("get-weather", location, data));
+    } catch (error) {
+        console.error("Weather API error:", error);
+        return res.status(502).json({ error: "Failed to fetch weather data" });
+    }
+});
+
+app.get("/api/tool/latest-news/:location?", async (req, res) => {
+    // Get user's actual coordinates from IP geolocation
+    req.ip = (req.headers["x-forwarded-for"] ||
+        req.headers["x-real-ip"] ||
+        req.headers["x-client-ip"] ||
+        req.connection.remoteAddress ||
+        req.socket?.remoteAddress ||
+        req.connection.socket?.remoteAddress).toString().split(",")[0].replace("::ffff:", "").trim();
+
+    const geo = geoip(req.ip);
+
+    const location = req.params.location?.trim() || 'worldwide';
+    const apiKey = process.env.SERPAPI_KEY;
+    const lang = (process.env.AGENT_LANGUAGE || 'en').toLowerCase();
+    const country = geo.flag.toLowerCase();
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+    }
+
+    try {
+        const url = apiEndpoints.serpapi.news_search.render({
+            "SERPAPI_KEY": apiKey,
+            "query": encodeURIComponent(location),
+            "language": lang,
+            "country": country
+        });
+
+        console.log('[NEWS-API] Request Details:');
+        console.log('  URL:', url);
+        console.log('  Query:', location);
+        console.log('  Language:', lang);
+        console.log('  Country:', country);
+        console.log('  API Key present:', !!apiKey);
+        console.log('  API Key length:', apiKey ? apiKey.length : 0);
+
+        const response = await fetch(url);
+
+        console.log('[NEWS-API] Response Status:', response.status, response.statusText);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[NEWS-API] Error Response Body:', errorText);
+
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+                console.error('[NEWS-API] Parsed Error Data:', JSON.stringify(errorData, null, 2));
+            } catch (e) {
+                console.error('[NEWS-API] Could not parse error response as JSON');
+            }
+
+            throw new Error(`SerpAPI request failed with status ${response.status}: ${errorText.substring(0, 200)}`);
+        }
+
+        const data = await response.json();
+        console.log('[NEWS-API] Success - Received', data.news_results ? data.news_results.length : 0, 'news items');
+        return res.send(formatToolResponse("latest-news", location, data.news_results));
+    } catch (error) {
+        console.error('[NEWS-API] Error:', error.message);
+        console.error('[NEWS-API] Error Stack:', error.stack);
+        return res.status(502).json({ error: "Failed to fetch news" });
+    }
+});
+
+app.get("/api/tool/local-events/:city?", async (req, res) => {
+    const city = req.params.city?.trim();
+    const apiKey = process.env.SERPAPI_KEY;
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+    }
+
+    if (!city) {
+        return res.status(400).json({ error: "City parameter is required" });
+    }
+
+    try {
+        const url = apiEndpoints.serpapi.events_search.render({
+            "SERPAPI_KEY": apiKey,
+            "city": encodeURIComponent(city)
+        });
+
+        console.log('[EVENTS-API] Request Details:');
+        console.log('  URL:', url);
+        console.log('  City:', city);
+        console.log('  API Key present:', !!apiKey);
+
+        const response = await fetch(url);
+
+        console.log('[EVENTS-API] Response Status:', response.status, response.statusText);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[EVENTS-API] Error Response Body:', errorText);
+
+            let errorData;
+            try {
+                errorData = JSON.parse(errorText);
+                console.error('[EVENTS-API] Parsed Error Data:', JSON.stringify(errorData, null, 2));
+            } catch (e) {
+                console.error('[EVENTS-API] Could not parse error response as JSON');
+            }
+
+            throw new Error(`SerpAPI request failed with status ${response.status}: ${errorText.substring(0, 200)}`);
+        }
+
+        const data = await response.json();
+        const events = data.events_results || [];
+        console.log('[EVENTS-API] Success - Received', events.length, 'events');
+
+        // Limit to first 3 events and format response
+        const topEvents = events.slice(0, 3).map(event => {
+            const title = event.title || 'Unnamed Event';
+            const startDate = event.date?.start_date || '';
+            const when = event.date?.when || '';
+            const venue = event.venue?.name || '';
+            const address = Array.isArray(event.address) ? event.address[0] : event.address;
+
+            return {
+                title,
+                date: startDate,
+                when,
+                venue,
+                address
+            };
+        });
+
+        return res.send(formatToolResponse("local-events", city, topEvents));
+    } catch (error) {
+        console.error('[EVENTS-API] Error:', error.message);
+        console.error('[EVENTS-API] Error Stack:', error.stack);
+        return res.status(502).json({ error: "Failed to fetch events" });
+    }
+});
+
+app.get("/api/tool/currency-convert/:param?", async (req, res) => {
+    const param = req.params.param?.trim();
+
+    try {
+        // Parse the currency conversion request
+        // Expected format: "amount FROM TO" or "FROM TO"
+        const upperParam = param.toUpperCase();
+        const involvesTRY = upperParam.includes('TRY');
+        const involvesUSD = upperParam.includes('USD');
+
+        // Determine which endpoint to use based on currencies
+        let endpoint;
+        if (involvesTRY) {
+            // Use altinkaynak for Turkish Lira conversions
+            endpoint = apiEndpoints.altinkaynak.currency;
+            console.log(`[CURRENCY] Using altinkaynak endpoint for TRY conversion`);
+        } else if (involvesUSD) {
+            // Use exchangeRates for USD conversions with other currencies
+            const apiKey = process.env.OPENEXCHANGERATES_KEY;
+            endpoint = apiEndpoints.openexchangerates.latest.replace('{{OPENEXCHANGERATES_KEY}}', apiKey);
+            console.log(`[CURRENCY] Using exchangeRates endpoint for USD conversion`);
+        } else {
+            // Default to altinkaynak for other currency pairs
+            endpoint = apiEndpoints.altinkaynak.currency;
+            console.log(`[CURRENCY] Using altinkaynak endpoint (default)`);
+        }
+
+        const response = await fetch(endpoint);
+
+        if (!response.ok) {
+            throw new Error(`Currency API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        return res.send(formatToolResponse("currency-convert", param, data));
+    } catch (error) {
+        console.error("Currency API error:", error);
+        return res.status(502).json({ error: "Failed to fetch currency data" });
+    }
+});
+
+app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
+    const coordinates = req.params.coordinates?.trim();
+    const query = req.params.query?.trim();
+    const apiKey = process.env.GPLACES_KEY;
+
+    if (!coordinates) {
+        return res.status(400).json({ error: "Coordinates parameter is required" });
+    }
+
+    if (!query) {
+        return res.status(400).json({ error: "Query parameter is required" });
+    }
+
+    try {
+        // Parse coordinates (format: "lat,lon")
+        let [lat, lon] = coordinates.split(',').map(c => parseFloat(c.trim()));
+
+        // Check if coordinates are invalid (0,0, NaN, null, undefined)
+        if (isNaN(lat) || isNaN(lon) ||
+            (lat === 0 && lon === 0) ||
+            lat === null || lon === null ||
+            lat === undefined || lon === undefined) {
+
+            console.log(`[POI-SEARCH] Invalid coordinates (${lat},${lon}), using geoip fallback`);
+
+            // Get IP address
+            const ip = (req.headers["x-forwarded-for"] ||
+                req.headers["x-real-ip"] ||
+                req.headers["x-client-ip"] ||
+                req.connection.remoteAddress ||
+                req.socket?.remoteAddress ||
+                req.connection.socket?.remoteAddress).toString().split(",")[0].replace("::ffff:", "").trim();
+
+            // Get geolocation from IP
+            const geo = geoip(ip);
+
+            if (geo.result && geo.lat && geo.lon) {
+                lat = geo.lat;
+                lon = geo.lon;
+                console.log(`[POI-SEARCH] Using geoip coordinates: ${lat},${lon} (${geo.city}, ${geo.country})`);
+            } else {
+                return res.status(400).json({ error: "Unable to determine location from IP or coordinates" });
+            }
+        }
+
+        console.log(`[POI-SEARCH] Searching for "${query}" near ${lat},${lon}`);
+
+        const url = apiEndpoints.google_places.text_search.render({
+            "GPLACES_KEY": apiKey,
+            "lat": lat,
+            "lon": lon,
+            "radius": 5000,
+            "query": encodeURIComponent(query)
+        });
+
+        //        console.log(url);
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`Google Places API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+        //        console.log(data);
+
+        // Filter, calculate distances, and format results
+        const resultsWithDistance = (data.results || []).map(place => {
+            const placeLat = place.geometry?.location?.lat;
+            const placeLon = place.geometry?.location?.lng;
+
+            // Calculate distance in meters
+            const distanceInMeters = distance(lat, lon, placeLat, placeLon, "M");
+
+            // Format distance as human-readable string
+            let distanceFormatted;
+            if (distanceInMeters < 1000) {
+                // Less than 1km - show in meters
+                distanceFormatted = Math.round(distanceInMeters) + "m";
+            } else {
+                // 1km or more - show in kilometers with 1 decimal
+                const distanceInKm = distanceInMeters / 1000;
+                distanceFormatted = distanceInKm.toFixed(1) + "km";
+            }
+
+            return {
+                name: place.name,
+                address: place.formatted_address,
+                location: place.geometry?.location,
+                types: place.types,
+                lat: placeLat,
+                lon: placeLon,
+                distance: distanceFormatted,
+                distanceMeters: distanceInMeters // Keep for sorting
+            };
+        });
+
+        // Sort by distance (closest first)
+        resultsWithDistance.sort((a, b) => a.distanceMeters - b.distanceMeters);
+
+        // Remove distanceMeters (only needed for sorting) and limit to 10 results
+        const results = {
+            status: data.status,
+            results: resultsWithDistance.slice(0, 10).map(place => ({
+                name: place.name,
+                address: place.address,
+                location: place.location,
+                types: place.types,
+                lat: place.lat,
+                lon: place.lon,
+                distance: place.distance
+            }))
+        };
+
+        console.log(`[POI-SEARCH] Found ${results.results.length} results, sorted by distance`);
+        if (results.results.length > 0) {
+            console.log(`[POI-SEARCH] Closest: ${results.results[0].name} at ${results.results[0].distance}`);
+        }
+
+        return res.send(formatToolResponse("poi-search", query, results));
+    } catch (error) {
+        console.error("POI search error:", error);
+        return res.status(502).json({ error: "Failed to fetch POI results" });
+    }
+});
+
+app.get("/api/tool/get-address/:coordinates", async (req, res) => {
+    const coordinates = req.params.coordinates?.trim();
+    const apiKey = process.env.GPLACES_KEY;
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "GPLACES_KEY is not configured" });
+    }
+
+    if (!coordinates) {
+        return res.status(400).json({ error: "Coordinates parameter is required" });
+    }
+
+    try {
+        // Parse coordinates (format: "lat,lon")
+        const [lat, lon] = coordinates.split(',').map(c => parseFloat(c.trim()));
+
+        if (isNaN(lat) || isNaN(lon)) {
+            return res.status(400).json({ error: "Invalid coordinates format. Expected: lat,lon" });
+        }
+
+        // Check for 0.00,0.00 coordinates (unable to determine location)
+        if (lat === 0 && lon === 0) {
+            console.log(`[GET-ADDRESS] Denied request for 0.00,0.00 coordinates`);
+            return res.status(400).json({ error: "unable to determine your coordinates" });
+        }
+
+        console.log(`[GET-ADDRESS] Reverse geocoding ${lat},${lon}`);
+
+        const address = await reverseGeocode(lat, lon, apiKey);
+
+        if (!address) {
+            return res.status(404).json({ error: "Could not find address for the given coordinates" });
+        }
+        console.log(address);
+        const result = {
+            coordinates: { lat, lon },
+            formatted_address: address
+        };
+
+        console.log(`[GET-ADDRESS] Found address: ${address}`);
+        return res.send(formatToolResponse("get-address", coordinates, result));
+    } catch (error) {
+        console.error("Get address error:", error);
+        return res.status(502).json({ error: "Failed to fetch address data" });
+    }
+});
+
+app.get("/api/tool/latest-earthquakes/:coordinates?", async (req, res) => {
+    const coordinates = req.params.coordinates?.trim();
+
+    const sid = req.cookies.sid;
+    if (!sid || !sessions["_" + sid]) {
+        return res.status(403).json({ error: "Invalid or missing session ID" });
+    }
+
+    // Extend cookie expiration by 1 year on every visit
+    res.cookie('sid', sid, {
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
+    });
+
+    var lat = sessions["_" + sid].lat;
+    var lon = sessions["_" + sid].lon;
+
+    const isAmericas = lon >= -180 && lon <= -30;
+    const endpoint = isAmericas ? apiEndpoints.usgs.earthquakes : apiEndpoints.emsc.earthquakes;
+
+    try {
+        const url = endpoint.render({
+            "lat": lat,
+            "lon": lon
+        });
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Earthquake API request failed with status ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Format earthquake results based on API source
+        let results;
+        if (isAmericas) {
+            // USGS format (GeoJSON)
+            results = {
+                count: data.metadata?.count || 0,
+                earthquakes: (data.features || []).map(eq => ({
+                    magnitude: eq.properties?.mag,
+                    depth: eq.geometry?.coordinates?.[2],
+                    region: eq.properties?.place,
+                    time: new Date(eq.properties?.time).toISOString(),
+                    location: {
+                        latitude: eq.geometry?.coordinates?.[1],
+                        longitude: eq.geometry?.coordinates?.[0]
+                    },
+                    source: eq.properties?.net
+                }))
+            };
+        } else {
+            // EMSC format
+            results = {
+                count: data.metadata?.count || 0,
+                earthquakes: (data.features || []).map(eq => ({
+                    magnitude: eq.properties?.mag,
+                    depth: eq.properties?.depth,
+                    region: eq.properties?.flynn_region,
+                    time: eq.properties?.time,
+                    location: {
+                        latitude: eq.properties?.lat,
+                        longitude: eq.properties?.lon
+                    },
+                    source: eq.properties?.auth
+                }))
+            };
+        }
+
+        return res.send(formatToolResponse("latest-earthquakes", `${lat},${lon}`, results));
+    } catch (error) {
+        console.error("Earthquake API error:", error);
+        return res.status(502).json({ error: "Failed to fetch earthquake data" });
+    }
+});
+
+app.get("/api/tool/flight-search/:param", async (req, res) => {
+    const param = req.params.param?.trim();
+    const apiKey = process.env.SERPAPI_KEY;
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+    }
+
+    if (!param) {
+        return res.status(400).json({ error: "Parameter is required (format: origin|destination|date)" });
+    }
+
+    const sid = req.cookies.sid;
+    if (!sid || !sessions["_" + sid]) {
+        return res.status(403).json({ error: "Invalid or missing session ID" });
+    }
+
+    // Extend cookie expiration by 1 year on every visit
+    res.cookie('sid', sid, {
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
+    });
+
+    try {
+        // Parse parameter: "origin|destination|date"
+        const parts = param.split('|');
+        if (parts.length !== 3) {
+            return res.status(400).json({ error: "Invalid parameter format. Expected: origin|destination|date" });
+        }
+
+        let [origin, destination, dateStr] = parts.map(p => p.trim());
+
+        // Helper function to get IATA code from city name using web search
+        const getIATACode = async (cityOrCode) => {
+            // If it's already a 3-letter IATA code, return it
+            if (/^[A-Z]{3}$/i.test(cityOrCode)) {
+                console.log(`[FLIGHT-SEARCH] Already an IATA code: ${cityOrCode}`);
+                return cityOrCode.toUpperCase();
+            }
+
+            // Search for airport code using SerpAPI
+            const searchQuery = `${cityOrCode} airport IATA code`;
+            const searchUrl = apiEndpoints.serpapi_flights.iata_search.render({
+                "query": encodeURIComponent(searchQuery),
+                "SERPAPI_KEY": apiKey
+            });
+
+            console.log(`[FLIGHT-SEARCH] Searching for airport code: "${searchQuery}"`);
+
+            try {
+                const searchResponse = await fetch(searchUrl);
+                if (!searchResponse.ok) {
+                    console.error(`[FLIGHT-SEARCH] Search failed for ${cityOrCode}`);
+                    return cityOrCode;
+                }
+
+                const searchData = await searchResponse.json();
+
+                // Look for IATA code in answer box or knowledge graph
+                if (searchData.answer_box?.answer) {
+                    const answer = searchData.answer_box.answer;
+                    const iataMatch = answer.match(/\b([A-Z]{3})\b/);
+                    if (iataMatch) {
+                        console.log(`[FLIGHT-SEARCH] Found IATA code in answer box: ${iataMatch[1]}`);
+                        return iataMatch[1];
+                    }
+                }
+
+                // Check knowledge graph
+                if (searchData.knowledge_graph?.iata_code) {
+                    console.log(`[FLIGHT-SEARCH] Found IATA code in knowledge graph: ${searchData.knowledge_graph.iata_code}`);
+                    return searchData.knowledge_graph.iata_code.toUpperCase();
+                }
+
+                // Search in organic results snippets
+                const organicResults = searchData.organic_results || [];
+                for (const result of organicResults.slice(0, 3)) {
+                    const snippet = (result.snippet || '') + ' ' + (result.title || '');
+                    // Look for patterns like "IATA: ABC" or "(ABC)" or "ABC airport"
+                    const patterns = [
+                        /IATA[:\s]+([A-Z]{3})/i,
+                        /\(([A-Z]{3})\)/,
+                        /\b([A-Z]{3})\s+airport/i,
+                        /airport\s+code[:\s]+([A-Z]{3})/i
+                    ];
+
+                    for (const pattern of patterns) {
+                        const match = snippet.match(pattern);
+                        if (match && match[1]) {
+                            console.log(`[FLIGHT-SEARCH] Found IATA code in snippet: ${match[1]}`);
+                            return match[1].toUpperCase();
+                        }
+                    }
+                }
+
+                console.log(`[FLIGHT-SEARCH] Could not find IATA code for ${cityOrCode}, using original value`);
+                return cityOrCode;
+            } catch (error) {
+                console.error(`[FLIGHT-SEARCH] Error searching for IATA code: ${error.message}`);
+                return cityOrCode;
+            }
+        };
+
+        // Helper function to parse date
+        const parseDate = (dateInput) => {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+
+            if (dateInput.toLowerCase() === 'today') {
+                return `${yyyy}-${mm}-${dd}`;
+            } else if (dateInput.toLowerCase() === 'tomorrow') {
+                const tomorrow = new Date(today);
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const tyyyy = tomorrow.getFullYear();
+                const tmm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+                const tdd = String(tomorrow.getDate()).padStart(2, '0');
+                return `${tyyyy}-${tmm}-${tdd}`;
+            } else if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+                return dateInput;
+            } else {
+                return `${yyyy}-${mm}-${dd}`;
+            }
+        };
+
+        // Convert origin and destination to IATA codes (async)
+        const departureId = await getIATACode(origin);
+        const arrivalId = await getIATACode(destination);
+        let searchDate = new Date(parseDate(dateStr));
+
+        console.log('[FLIGHT-SEARCH] Request Details:');
+        console.log('  Origin:', origin, '→ IATA:', departureId);
+        console.log('  Destination:', destination, '→ IATA:', arrivalId);
+        console.log('  Initial Date:', dateStr, '→ Formatted:', searchDate.toISOString().split('T')[0]);
+        console.log('  API Key present:', !!apiKey);
+
+        // Loop through next 10 days to find flights
+        let allFlights = [];
+        let finalSearchDate = null;
+        const maxDays = 10;
+
+        for (let dayOffset = 0; dayOffset < maxDays; dayOffset++) {
+            // Calculate current search date
+            const currentSearchDate = new Date(searchDate);
+            currentSearchDate.setDate(searchDate.getDate() + dayOffset);
+
+            // Format date as YYYY-MM-DD (automatically handles month/year transitions)
+            const yyyy = currentSearchDate.getFullYear();
+            const mm = String(currentSearchDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(currentSearchDate.getDate()).padStart(2, '0');
+            const formattedDate = `${yyyy}-${mm}-${dd}`;
+
+            console.log(`[FLIGHT-SEARCH] Day ${dayOffset + 1}/10: Searching for ${formattedDate}`);
+
+            // Build SerpAPI request URL
+            const url = apiEndpoints.serpapi_flights.flight_search.render({
+                "departure_id": departureId,
+                "arrival_id": arrivalId,
+                "outbound_date": formattedDate,
+                "currency": "USD",
+                "stops": "1",
+                "type": "2",
+                "SERPAPI_KEY": apiKey
+            });
+
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                console.log(`[FLIGHT-SEARCH] Day ${dayOffset + 1}: API request failed with status ${response.status}`);
+                continue; // Try next day
+            }
+
+            const data = await response.json();
+            const bestFlights = data.best_flights || [];
+            const otherFlights = data.other_flights || [];
+            const dayFlights = [...bestFlights, ...otherFlights];
+
+            console.log(`[FLIGHT-SEARCH] Day ${dayOffset + 1}: Found ${dayFlights.length} flights`);
+
+            // If flights found, use them and stop searching
+            if (dayFlights.length > 0) {
+                allFlights = dayFlights;
+                finalSearchDate = formattedDate;
+                console.log(`[FLIGHT-SEARCH] Success - Found ${allFlights.length} flights on ${formattedDate}`);
+                break;
+            }
+        }
+
+        // If no flights found after 10 days
+        if (allFlights.length === 0) {
+            console.log('[FLIGHT-SEARCH] No flights found in next 10 days');
+            return res.send(formatToolResponse("flight-search", param, {
+                search: {
+                    origin: origin,
+                    destination: destination,
+                    date: searchDate.toISOString().split('T')[0],
+                    departure_iata: departureId,
+                    arrival_iata: arrivalId
+                },
+                flights: [],
+                count: 0,
+                user_currency: sessions["_" + sid].currency || 'USD',
+                message: 'No flights found in the next 10 days'
+            }));
+        }
+
+        // Format flight results for the agent
+        const formattedFlights = allFlights.map(flight => {
+            const firstLeg = flight.flights?.[0] || {};
+            return {
+                departure_time: firstLeg.departure_airport?.time || '',
+                arrival_time: firstLeg.arrival_airport?.time || '',
+                departure_airport: {
+                    name: firstLeg.departure_airport?.name || '',
+                    id: firstLeg.departure_airport?.id || departureId
+                },
+                arrival_airport: {
+                    name: firstLeg.arrival_airport?.name || '',
+                    id: firstLeg.arrival_airport?.id || arrivalId
+                },
+                duration_minutes: flight.total_duration || firstLeg.duration || 0,
+                airline: firstLeg.airline || '',
+                price_usd: flight.price || 0,
+                flight_number: firstLeg.flight_number || '',
+                airplane: firstLeg.airplane || ''
+            };
+        });
+
+        const result = {
+            search: {
+                origin: origin,
+                destination: destination,
+                date: finalSearchDate, // Use the actual date where flights were found
+                requested_date: searchDate.toISOString().split('T')[0],
+                departure_iata: departureId,
+                arrival_iata: arrivalId
+            },
+            flights: formattedFlights,
+            count: formattedFlights.length,
+            user_currency: sessions["_" + sid].currency || 'USD'
+        };
+
+        return res.send(formatToolResponse("flight-search", param, result));
+    } catch (error) {
+        console.error('[FLIGHT-SEARCH] Error:', error.message);
+        console.error('[FLIGHT-SEARCH] Error Stack:', error.stack);
+        return res.status(502).json({ error: "Failed to fetch flight data" });
+    }
+});
+
+app.get("/api/tool/author/:param", async (req, res) => {
+    const param = req.params.param?.trim();
+    const apiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
+
+    if (!param) {
+        return res.status(400).json({ error: "Parameter is required" });
+    }
+
+    if (!apiKey) {
+        return res.status(500).json({ error: "ANTHROPIC_API_KEY or OPENAI_API_KEY is not configured" });
+    }
+
+    try {
+        console.log(`[AUTHOR] Generating content for: "${param}"`);
+
+        // Load author prompt instructions
+        const authorPrompt = fs.readFileSync("./content/agent-author.md", "utf8").trim();
+
+        // Construct the full prompt
+        const fullPrompt = `${authorPrompt}\n\nUser Request: ${param}\n\nGenerate the requested content following the XML formatting instructions above. Provide a brief spoken response followed by the appropriate file tag with complete content.`;
+
+        let response;
+        let contentResult;
+
+        // Try Anthropic API first
+        if (process.env.ANTHROPIC_API_KEY) {
+            console.log(`[AUTHOR] Using Anthropic API`);
+            response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': process.env.ANTHROPIC_API_KEY,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: 'claude-3-5-sonnet-20241022',
+                    max_tokens: 4096,
+                    messages: [{
+                        role: 'user',
+                        content: fullPrompt
+                    }]
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Anthropic API request failed with status ${response.status}`);
+            }
+
+            const data = await response.json();
+            contentResult = data.content[0].text;
+        }
+        // Fallback to OpenAI API
+        else if (process.env.OPENAI_API_KEY) {
+            console.log(`[AUTHOR] Using OpenAI API`);
+            response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4',
+                    max_tokens: 4096,
+                    messages: [{
+                        role: 'system',
+                        content: authorPrompt
+                    }, {
+                        role: 'user',
+                        content: param
+                    }]
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI API request failed with status ${response.status}`);
+            }
+
+            const data = await response.json();
+            contentResult = data.choices[0].message.content;
+        } else {
+            throw new Error('No API key configured');
+        }
+
+        console.log(`[AUTHOR] Content generated successfully (${contentResult.length} chars)`);
+
+        // Return the generated content directly (it already includes XML formatting)
+        return res.send(contentResult);
+    } catch (error) {
+        console.error('[AUTHOR] Error:', error.message);
+        console.error('[AUTHOR] Error Stack:', error.stack);
+        return res.status(502).json({ error: "Failed to generate content" });
+    }
+});
+
+app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
+    try {
+        // Get IP address
+        const ip = (req.headers["x-forwarded-for"] ||
+            req.headers["x-real-ip"] ||
+            req.headers["x-client-ip"] ||
+            req.connection.remoteAddress ||
+            req.socket?.remoteAddress ||
+            req.connection.socket?.remoteAddress).toString().split(",")[0].replace("::ffff:", "").trim();
+
+        // Get geolocation data
+        const geo = geoip(ip);
+
+        // Get current date and time
+        const now = new Date();
+        const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+        const timeStr = now.toTimeString().split(' ')[0]; // HH:MM:SS
+
+        // Extract data from request body
+        const { category, user_request, user_transcript } = req.body;
+
+        if (!category || !user_request || !user_transcript) {
+            return res.status(400).json({ error: "Missing required fields: category, user_request, user_transcript" });
+        }
+
+        console.log('[TUNE-BEHAVIOUR] Received request:');
+        console.log('  IP:', ip);
+        console.log('  Country:', geo.country);
+        console.log('  City:', geo.city);
+        console.log('  Category:', category);
+        console.log('  User Request:', user_request);
+        console.log('  User Transcript:', user_transcript);
+
+        // Create user directory if it doesn't exist
+        const userDir = path.join(__dirname, './user');
+        if (!fs.existsSync(userDir)) {
+            fs.mkdirSync(userDir, { recursive: true });
+            console.log('[TUNE-BEHAVIOUR] Created ./user directory');
+        }
+
+        // Path to requests file
+        const requestsFile = path.join(userDir, 'requests.md');
+
+        // Format the entry
+        const entry = `
+## ${dateStr} ${timeStr}
+- **IP**: ${ip}
+- **Country**: ${geo.country || 'Unknown'}
+- **City**: ${geo.city || 'Unknown'}
+- **Category**: ${category}
+- **Request**: ${user_request}
+- **Transcript**: ${user_transcript}
+
+---
+`;
+
+        // Append to file (create if doesn't exist)
+        fs.appendFileSync(requestsFile, entry, 'utf8');
+
+        console.log('[TUNE-BEHAVIOUR] Request logged to', requestsFile);
+
+        return res.json({
+            success: true,
+            message: 'Behaviour tuning request recorded',
+            logged_to: requestsFile
+        });
+
+    } catch (error) {
+        console.error('[TUNE-BEHAVIOUR] Error:', error.message);
+        console.error('[TUNE-BEHAVIOUR] Error Stack:', error.stack);
+        return res.status(500).json({ error: "Failed to process tune-behaviour request" });
+    }
+});
+
+app.get("*", (req, res) => {
+    // Simply serve index.html without creating any sessions
+    // Sessions will be created when /api/signed-url is called
+    res.sendFile(path.join(__dirname, "./dist/index.html"));
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}: http://localhost:${PORT}`);
+});

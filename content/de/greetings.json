@@ -1,0 +1,132 @@
+{
+    "resume": [
+        "Verbindung wieder da — wir waren bei {{topic}}.",
+        "Ich bin zurück — wir haben über {{topic}} gesprochen.",
+        "Entschuldige, das Letzte, was du sagtest, betraf {{topic}}.",
+        "Wir knüpfen an: Thema {{topic}} blieb offen."
+    ],
+    "firstTime": [
+        "Hallo, ich bin VOX. Wie heißt du?",
+        "Hallo, ich bin VOX. Wie darf ich dich nennen?",
+        "Hallo, ich bin VOX. Wie soll ich dich ansprechen?",
+        "Grüß dich, ich bin VOX. Wie ist dein Name?",
+        "Hallo, ich bin VOX. Wie lautet dein Name?",
+        "Guten Tag, ich bin VOX. Wie darf ich dich nennen?"
+    ],
+    "anonymous": {
+        "morning": [
+            "Guten Morgen — Morgenstund hat Gold im Mund.",
+            "Der frühe Vogel fängt den Wurm.",
+            "Guten Morgen — ein guter Start ist die halbe Miete.",
+            "Neuer Tag, neues Glück.",
+            "Guten Morgen — wer früh aufsteht, hat mehr vom Tag.",
+            "Frisch gewagt ist halb gewonnen.",
+            "Guten Morgen — der Appetit kommt beim Essen.",
+            "Der Morgen macht den Tag.",
+            "Guten Morgen — auf geht’s.",
+            "Aller Anfang ist schwer — packen wir’s an.",
+            "Guten Morgen — in der Ruhe liegt die Kraft.",
+            "Guten Morgen — heute wird ein guter Tag."
+        ],
+        "day": [
+            "Hallo — was du heute kannst besorgen, das verschiebe nicht auf morgen.",
+            "Ohne Fleiß kein Preis.",
+            "Guten Tag — Übung macht den Meister.",
+            "Wer rastet, der rostet.",
+            "Viele Hände, schnelles Ende.",
+            "Zeit ist Geld.",
+            "Kleinvieh macht auch Mist.",
+            "Gut Ding will Weile haben.",
+            "In der Kürze liegt die Würze.",
+            "Es ist noch kein Meister vom Himmel gefallen.",
+            "Ordnung ist das halbe Leben.",
+            "Müßiggang ist aller Laster Anfang."
+        ],
+        "evening": [
+            "Guten Abend — Ende gut, alles gut.",
+            "Der Abend krönt den Tag.",
+            "Guten Abend — nach getaner Arbeit ist gut ruhen.",
+            "Was lange währt, wird endlich gut.",
+            "Guten Abend — Feierabend!",
+            "Abendrot, Schönwetterbot’.",
+            "Guten Abend — morgen ist auch noch ein Tag.",
+            "Den Tag beschließen und zur Ruhe kommen.",
+            "Guten Abend — die Ruhe nach dem Sturm.",
+            "Ein guter Abend krönt den Tag.",
+            "Guten Abend — Zeit für Muße.",
+            "Guten Abend — gut geschafft ist halb geruht."
+        ],
+        "night": [
+            "Gute Nacht — die Nacht bringt Rat.",
+            "Die Nacht ist die Mutter der Gedanken.",
+            "In der Ruhe liegt die Kraft.",
+            "Nachts sind alle Katzen grau.",
+            "Gute Nacht — vor dem Morgen ist’s am dunkelsten.",
+            "Träume sind Schäume.",
+            "Gute Nacht — morgen ist ein neuer Tag.",
+            "Stille Nacht, klare Gedanken.",
+            "Gute Nacht — Sterne sieht man nur im Dunkeln.",
+            "Wer früh schlafen geht, steht frisch auf.",
+            "Gute Nacht — die Ruhe kehrt ein.",
+            "Die Nacht gehört der Erholung."
+        ]
+    },
+    "known": {
+        "morning": [
+            "Guten Morgen {{name}} — Morgenstund hat Gold im Mund.",
+            "{{name}}, der frühe Vogel fängt den Wurm.",
+            "Guten Morgen {{name}} — ein guter Start ist die halbe Miete.",
+            "Neuer Tag, neues Glück, {{name}}.",
+            "Guten Morgen {{name}} — wer früh aufsteht, hat mehr vom Tag.",
+            "{{name}}, frisch gewagt ist halb gewonnen.",
+            "Guten Morgen {{name}} — der Appetit kommt beim Essen.",
+            "{{name}}, der Morgen macht den Tag.",
+            "Guten Morgen {{name}} — auf geht’s.",
+            "{{name}}, aller Anfang ist schwer — packen wir’s an.",
+            "Guten Morgen {{name}} — in der Ruhe liegt die Kraft.",
+            "{{name}}, heute wird ein guter Tag."
+        ],
+        "day": [
+            "Hallo {{name}} — was du heute kannst besorgen, das verschiebe nicht auf morgen.",
+            "{{name}}, ohne Fleiß kein Preis.",
+            "Guten Tag {{name}} — Übung macht den Meister.",
+            "{{name}}, wer rastet, der rostet.",
+            "Hallo {{name}} — viele Hände, schnelles Ende.",
+            "{{name}}, Zeit ist Geld.",
+            "Guten Tag {{name}} — Kleinvieh macht auch Mist.",
+            "{{name}}, gut Ding will Weile haben.",
+            "Hallo {{name}} — in der Kürze liegt die Würze.",
+            "{{name}}, es ist noch kein Meister vom Himmel gefallen.",
+            "Guten Tag {{name}} — Ordnung ist das halbe Leben.",
+            "{{name}}, Müßiggang ist aller Laster Anfang."
+        ],
+        "evening": [
+            "Guten Abend {{name}} — Ende gut, alles gut.",
+            "{{name}}, der Abend krönt den Tag.",
+            "Guten Abend {{name}} — nach getaner Arbeit ist gut ruhen.",
+            "{{name}}, was lange währt, wird endlich gut.",
+            "Guten Abend {{name}} — Feierabend!",
+            "{{name}}, Abendrot, Schönwetterbot’.",
+            "Guten Abend {{name}} — morgen ist auch noch ein Tag.",
+            "{{name}}, den Tag beschließen und zur Ruhe kommen.",
+            "Guten Abend {{name}} — die Ruhe nach dem Sturm.",
+            "{{name}}, ein guter Abend krönt den Tag.",
+            "Guten Abend {{name}} — Zeit für Muße.",
+            "{{name}}, gut geschafft ist halb geruht."
+        ],
+        "night": [
+            "Gute Nacht {{name}} — die Nacht bringt Rat.",
+            "{{name}}, die Nacht ist die Mutter der Gedanken.",
+            "Gute Nacht {{name}} — in der Ruhe liegt die Kraft.",
+            "{{name}}, nachts sind alle Katzen grau.",
+            "Gute Nacht {{name}} — vor dem Morgen ist’s am dunkelsten.",
+            "{{name}}, Träume sind Schäume.",
+            "Gute Nacht {{name}} — morgen ist ein neuer Tag.",
+            "{{name}}, stille Nacht, klare Gedanken.",
+            "Gute Nacht {{name}} — Sterne sieht man nur im Dunkeln.",
+            "{{name}}, wer früh schlafen geht, steht frisch auf.",
+            "Gute Nacht {{name}} — die Ruhe kehrt ein.",
+            "{{name}}, die Nacht gehört der Erholung."
+        ]
+    }
+}
