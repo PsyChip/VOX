@@ -1,9 +1,7 @@
 "use strict";
 
 import { Conversation } from '@elevenlabs/client';
-
-//import { evaluate } from 'mathjs';
-import { evaluate } from 'mathjs/es/evaluate.js';
+import { evaluate } from 'mathjs';
 
 let conversation = null;
 
@@ -1761,7 +1759,6 @@ async function startConversation() {
                     window.debugLog(`CONNECTION: Session lasted ${Math.floor(sessionDuration / 1000)}s`, 'system');
                     window.debugLog(`CONNECTION: User initiated: ${window.userRequestedDisconnect}`, 'system');
                 }
-                clearTimeout(stimer);
                 flush();
                 subtitle.innerHTML = "[agent disconnected]";
                 setTimeout(function () {
@@ -1842,7 +1839,6 @@ async function startConversation() {
                 _err.play();
                 hideDisconnectionBox();
                 flush();
-                clearTimeout(stimer);
                 subtitle.innerHTML = "[error occurred]";
                 if (error.reason) {
                     subtitle.innerHTML = "[" + error.reason + "]";
@@ -1968,6 +1964,17 @@ async function startConversation() {
                                     case "topic":
                                         if (tag.attr) {
                                             handleTopic(tag.attr);
+                                        }
+                                        break;
+                                    case "entity":
+                                        if (tag.attr && tag.attr.type && tag.attr.value) {
+                                            const contextMsg = `<system-reminder>Use this ${tag.attr.type} for next question: ${tag.attr.value}</system-reminder>`;
+                                            if (conversation) {
+                                                conversation.sendUserMessage(contextMsg);
+                                                if (window.debugLog) {
+                                                    window.debugLog(`CONTEXT: ${tag.attr.type} entity noted - ${tag.attr.value}`, 'system');
+                                                }
+                                            }
                                         }
                                         break;
                                     case "eval":
