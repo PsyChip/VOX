@@ -9,3 +9,5 @@ dist/styles.css
 last_system_prompt.md
 .claude
 user/
+user/*
+dist/bundle-report.html
