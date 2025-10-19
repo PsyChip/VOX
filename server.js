@@ -1,6 +1,6 @@
 /*
 todo: websockets for real-time typing indicator
-implement websockets
+
 send realtime transcript to websocket endpoint
 
 activate system prompt instructions on demand (heuristically) if user tend to make a feedback, activate the tune-behaviour system prompt
@@ -11,6 +11,7 @@ activate parts of system prompt based on device type and screen orientation
 */
 
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const readline = require("readline");
@@ -19,6 +20,7 @@ const Reader = require('@maxmind/geoip2-node').Reader;
 const fs = require("fs");
 const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
+const zlib = require('zlib');
 const { encoding_for_model } = require('tiktoken');
 const UAParser = require('ua-parser-js');
 
@@ -42,9 +44,8 @@ function getTokenEncoder() {
         try {
             // Use GPT-4 encoding (cl100k_base) which is compatible with most modern models
             tokenEncoder = encoding_for_model('gpt-4');
-            console.log('[TIKTOKEN] Encoder initialized: cl100k_base');
         } catch (error) {
-            console.error('[TIKTOKEN] Failed to initialize encoder:', error.message);
+
         }
     }
     return tokenEncoder;
@@ -55,13 +56,12 @@ function countTokens(text) {
     try {
         const encoder = getTokenEncoder();
         if (!encoder) {
-            console.warn('[TIKTOKEN] Encoder not available, returning character-based estimate');
             return Math.ceil(text.length / 4); // Rough estimate: 1 token ≈ 4 characters
         }
         const tokens = encoder.encode(text);
         return tokens.length;
     } catch (error) {
-        console.error('[TIKTOKEN] Error counting tokens:', error.message);
+
         return Math.ceil(text.length / 4); // Fallback estimate
     }
 }
@@ -215,7 +215,6 @@ function initializeUserDirectory(uid, systemPrompt) {
     try {
         // Create user directory
         fs.mkdirSync(userDirPath, { recursive: true });
-        console.log(`[USER-INIT] Created directory: ${userDirPath}`);
 
         // Create profile.md
         const profileContent = `# User Profile
@@ -235,7 +234,6 @@ This file contains user profile information and preferences.
 `;
 
         fs.writeFileSync(path.join(userDirPath, 'profile.md'), profileContent, 'utf8');
-        console.log(`[USER-INIT] Created profile.md for uid: ${uid}`);
 
         // Create transcript.md
         const transcriptContent = `# Conversation Transcript
@@ -249,16 +247,14 @@ This file contains user profile information and preferences.
 `;
 
         fs.writeFileSync(path.join(userDirPath, 'transcript.md'), transcriptContent, 'utf8');
-        console.log(`[USER-INIT] Created transcript.md for uid: ${uid}`);
 
         // Create system.md with the crafted system prompt
         fs.writeFileSync(path.join(userDirPath, 'system.md'), systemPrompt, 'utf8');
-        console.log(`[USER-INIT] Created system.md for uid: ${uid}`);
 
-        console.log(`[USER-INIT] Successfully initialized user directory for uid: ${uid}`);
+
         return true; // Successfully initialized
     } catch (error) {
-        console.error(`[USER-INIT] Error initializing user directory for uid ${uid}:`, error.message);
+
         return false;
     }
 }
@@ -506,11 +502,105 @@ app.use(cookieParser());
 const trustProxy = true;
 app.set('trust proxy', trustProxy);
 
+// Note: static middleware is mounted after compression route to allow negotiation
+
+// -------------------------------------------------------------
+// Compression helpers and static compressed responder
+// -------------------------------------------------------------
+
+const staticRoot = path.join(__dirname, './dist');
+const compressibleExt = new Set(['.js', '.css', '.html', '.json', '.md', '.markdown']);
+
+function pickEncoding(accept) {
+    if (!accept || typeof accept !== 'string') return null;
+    const a = accept.toLowerCase();
+    if (a.includes('br')) return 'br';
+    if (a.includes('gzip')) return 'gzip';
+    if (a.includes('deflate')) return 'deflate';
+    return null;
+}
+
+function contentTypeFor(filePath) {
+    const ext = path.extname(filePath).toLowerCase();
+    switch (ext) {
+        case '.js': return 'application/javascript; charset=utf-8';
+        case '.css': return 'text/css; charset=utf-8';
+        case '.html': return 'text/html; charset=utf-8';
+        case '.json': return 'application/json; charset=utf-8';
+        case '.md':
+        case '.markdown': return 'text/markdown; charset=utf-8';
+        default: return 'application/octet-stream';
+    }
+}
+
+function sendCompressedBuffer(req, res, buffer, ctype) {
+    const enc = pickEncoding(req.headers['accept-encoding'] || '');
+    res.setHeader('Vary', 'Accept-Encoding');
+    res.setHeader('Content-Type', ctype);
+
+    if (enc === 'br') {
+        try {
+            const out = zlib.brotliCompressSync(buffer);
+            res.setHeader('Content-Encoding', 'br');
+            res.setHeader('Content-Length', out.length);
+            return res.end(out);
+        } catch (_) { /* fallthrough to gzip/deflate/identity */ }
+    }
+    if (enc === 'gzip') {
+        try {
+            const out = zlib.gzipSync(buffer);
+            res.setHeader('Content-Encoding', 'gzip');
+            res.setHeader('Content-Length', out.length);
+            return res.end(out);
+        } catch (_) { /* fallthrough */ }
+    }
+    if (enc === 'deflate') {
+        try {
+            const out = zlib.deflateSync(buffer);
+            res.setHeader('Content-Encoding', 'deflate');
+            res.setHeader('Content-Length', out.length);
+            return res.end(out);
+        } catch (_) { /* fallthrough */ }
+    }
+    // Identity
+    res.setHeader('Content-Length', buffer.length);
+    return res.end(buffer);
+}
+
+async function sendCompressedFile(req, res, absPath) {
+    try {
+        const data = await fs.promises.readFile(absPath);
+        const ctype = contentTypeFor(absPath);
+        sendCompressedBuffer(req, res, data, ctype);
+    } catch (e) {
+        res.status(404).end('Not found');
+    }
+}
+
+// Intercept static file requests to serve with negotiated compression
+app.get('/static/*', async (req, res, next) => {
+    try {
+        const rel = req.path.replace(/^\/static\//, '');
+        const abs = path.join(staticRoot, rel);
+        const ext = path.extname(abs).toLowerCase();
+        if (!compressibleExt.has(ext)) return next();
+        return await sendCompressedFile(req, res, abs);
+    } catch (_) {
+        return next();
+    }
+});
+
+// Fallback static serving for any remaining assets
 app.use("/static", express.static(path.join(__dirname, "./dist")));
 
 // Serve manifest.json for PWA support
-app.get("/manifest.json", (req, res) => {
-    res.sendFile(path.join(__dirname, "./dist/manifest.json"));
+app.get("/manifest.json", async (req, res) => {
+    try {
+        const filePath = path.join(__dirname, "./dist/manifest.json");
+        await sendCompressedFile(req, res, filePath);
+    } catch (_) {
+        res.sendFile(path.join(__dirname, "./dist/manifest.json"));
+    }
 });
 
 app.get("/api/signed-url/:userdata", async (req, res) => {
@@ -587,8 +677,7 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
     const userAgentString = req.headers["user-agent"] || "Unknown";
     const userAgent = parseUserAgent(userAgentString);
 
-    console.log(`[USER-AGENT] Raw: ${userAgentString}`);
-    console.log(`[USER-AGENT] Parsed: ${userAgent}`);
+
 
     var system_prompt = fs.readFileSync(promptPath, "utf8").trim().render(
         {
@@ -619,11 +708,10 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
     // Check if uidQuery is valid (not "0", not null/undefined, exactly 32 characters)
     if (uidQuery && uidQuery !== "0" && uidQuery !== "null" && uidQuery !== "undefined" && uidQuery.length === 32) {
         uid = uidQuery;
-        console.log(`[UID] Using uidQuery from client: ${uid}`);
 
         // Cross-check with sid cookie
         if (cookieSid && cookieSid !== uid) {
-            console.warn(`[UID] WARNING: Cookie sid (${cookieSid}) does not match uidQuery (${uid}). Using uidQuery and updating cookie.`);
+
             shouldUpdateCookie = true;
         } else if (!cookieSid) {
             // No cookie exists, need to set it
@@ -632,7 +720,6 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
     } else {
         // Generate new uid
         uid = md5(req.headers["user-agent"] + req.ip + randInt(11111, 99999));
-        console.log(`[UID] Generated new uid: ${uid}`);
         shouldUpdateCookie = true;
     }
 
@@ -654,7 +741,7 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
     const contextUsedPercent = ((tokenCount / CONTEXT_LENGTH) * 100).toFixed(2);
     const contextLeftPercent = (100 - contextUsedPercent).toFixed(2);
 
-    console.log(`[TOKEN USAGE]`);
+
     console.log(`  Tokens used: ${tokenCount.toLocaleString()}`);
     console.log(`  Context length: ${CONTEXT_LENGTH.toLocaleString()}`);
     console.log(`  Context used: ${contextUsedPercent}%`);
@@ -729,39 +816,15 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
         voiceId: voiceId,
     };
     try {
-        console.log('[ELEVENLABS] Starting signed URL request...');
-        console.log('[ELEVENLABS] Agent ID:', process.env.AGENT_ID);
-
-        const url = apiEndpoints.elevenlabs.signed_url.replace('{{AGENT_ID}}', process.env.AGENT_ID);
-        console.log('[ELEVENLABS] Request URL:', url);
-        console.log('[ELEVENLABS] API Key present:', !!process.env.XI_API_KEY);
-        console.log('[ELEVENLABS] API Key length:', process.env.XI_API_KEY ? process.env.XI_API_KEY.length : 0);
-
-        const startTime = Date.now();
-        const response = await fetch(
-            url,
-            {
-                method: "GET",
-                headers: {
-                    "xi-api-key": process.env.XI_API_KEY,
-                },
-            }
-        );
-        const requestTime = Date.now() - startTime;
-        console.log('[ELEVENLABS] Request completed in', requestTime, 'ms');
-        console.log('[ELEVENLABS] Response status:', response.status, response.statusText);
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('[ELEVENLABS] Error response body:', errorText);
-            throw new Error(`Failed to get signed URL: ${response.status} ${response.statusText}`);
+        // Compute control WS URL and uid/cookie regardless of mode
+        try {
+            const xfProto = (req.headers['x-forwarded-proto'] || '').toString();
+            const proto = (xfProto.includes('https') || req.protocol === 'https') ? 'wss' : 'ws';
+            const host = (req.headers['x-forwarded-host'] || req.headers['host'] || `localhost:${PORT}`).toString();
+            payload.controlWsUrl = `${proto}://${host}/ws`;
+        } catch (e) {
+            payload.controlWsUrl = `ws://localhost:${PORT}/ws`;
         }
-
-        const data = await response.json();
-        console.log('[ELEVENLABS] Signed URL received:', data.signed_url ? 'YES' : 'NO');
-        console.log('[ELEVENLABS] Signed URL length:', data.signed_url ? data.signed_url.length : 0);
-
-        payload.signedUrl = data.signed_url;
         payload.uid = uid;
 
         // Only update cookie if needed
@@ -771,16 +834,31 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
                 sameSite: 'lax',
                 maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
             });
-            console.log(`[COOKIE] Updated sid cookie to: ${uid}`);
         }
 
-        console.log('[ELEVENLABS] Payload prepared, sending to client');
-        res.json(payload);
-        console.log('[ELEVENLABS] Response sent successfully');
+        const isChatMode = (req.query.mode === 'chat');
+        const hasXI = !!process.env.XI_API_KEY && !!process.env.AGENT_ID;
+        if (isChatMode || !hasXI) {
+            // For chat mode or when XI is not configured, skip signed URL and return minimal payload
+            return res.json(payload);
+        }
+
+        // Voice mode: fetch ElevenLabs signed URL as before
+        const url = apiEndpoints.elevenlabs.signed_url.replace('{{AGENT_ID}}', process.env.AGENT_ID);
+        const response = await fetch(url, { method: 'GET', headers: { 'xi-api-key': process.env.XI_API_KEY } });
+
+        if (!response.ok) {
+            throw new Error(`Failed to get signed URL: ${response.status} ${response.statusText}`);
+        }
+        const data = await response.json();
+        payload.signedUrl = data.signed_url;
+        return res.json(payload);
     } catch (error) {
-        console.error('[ELEVENLABS] Error occurred:', error.message);
-        console.error('[ELEVENLABS] Error stack:', error.stack);
-        res.status(500).json({ error: "Failed to get signed URL", details: error.message });
+        // If chat mode, still return payload; else error
+        if (req.query.mode === 'chat') {
+            return res.json(payload);
+        }
+        return res.status(500).json({ error: 'Failed to get signed URL', details: error.message });
     }
 });
 
@@ -794,7 +872,6 @@ app.post("/api/user-init", (req, res) => {
     if (sessions["_" + sid].systemPrompt) {
         const initialized = initializeUserDirectory(sid, sessions["_" + sid].systemPrompt);
         if (initialized) {
-            console.log(`[USER-INIT] Directory initialized for uid: ${sid}`);
             return res.json({ success: true, message: "User directory initialized" });
         } else {
             return res.json({ success: false, message: "Directory already exists or initialization failed" });
@@ -843,6 +920,13 @@ app.get("/api/sentence/:event", (req, res) => {
 });
 
 function formatToolResponse(cmd, param, result) {
+    // Log tool call and result to console
+    console.log('\n=== TOOL CALL ===');
+    console.log(`  Command: ${cmd}`);
+    console.log(`  Parameter: ${param}`);
+    console.log(`  Result: ${JSON.stringify(result, null, 2)}`);
+    console.log('=================\n');
+
     return fs.readFileSync("./content/tool-response.md", "utf8").trim().render(
         {
             command: cmd,
@@ -887,8 +971,13 @@ app.get("/api/tool/image-search/:query", async (req, res) => {
             .filter((item) => item.thumbnail && item.original)
             .slice(0, 25);
 
-        console.log(`[IMAGE-SEARCH] Query: "${query}" - Found ${results.length} results`);
-        console.log('[IMAGE-SEARCH] Results:', JSON.stringify(results, null, 2));
+        // Log image-search tool call and result
+        console.log('\n=== TOOL CALL ===');
+        console.log(`  Command: image-search`);
+        console.log(`  Parameter: ${query}`);
+        console.log(`  Result: ${results.length} images found`);
+        console.log(`  First 3 images:`, results.slice(0, 3));
+        console.log('=================\n');
 
         return res.send(results);
     } catch (error) {
@@ -921,7 +1010,15 @@ app.get("/api/tool/web-search/:query", async (req, res) => {
         }
 
         const data = await response.json();
-        return res.send(formatToolResponse("web-search", query, data));
+        // Only return sanitized organic results: title, link, snippet
+        const organic = Array.isArray(data?.organic_results) ? data.organic_results : [];
+        const trimmed = organic.map((item) => ({
+            title: item?.title || '',
+            link: item?.link || '',
+            snippet: item?.snippet || ''
+        })).filter(r => r.title && r.link);
+
+        return res.send(formatToolResponse("web-search", query, trimmed));
     } catch (error) {
         console.error("Web search error:", error);
         return res.status(502).json({ error: "Failed to fetch search results" });
@@ -943,7 +1040,7 @@ app.get("/api/tool/visible-aircraft/:location", async (req, res) => {
 
     var lat = sessions["_" + sid].lat;
     var lon = sessions["_" + sid].lon;
-    console.log(`[AIRCRAFT] Fetching aircraft near ${lat},${lon}`);
+
     // Get bounding box around the coordinates (16 km radius)
     const { lamin, lamax, lomin, lomax } = getBoundingBox(lat, lon, 30);
     const url = apiEndpoints.opensky.aircraft_states.render({
@@ -1022,7 +1119,7 @@ app.get("/api/tool/latest-news/:location?", async (req, res) => {
             "country": country
         });
 
-        console.log('[NEWS-API] Request Details:');
+
         console.log('  URL:', url);
         console.log('  Query:', location);
         console.log('  Language:', lang);
@@ -1032,29 +1129,28 @@ app.get("/api/tool/latest-news/:location?", async (req, res) => {
 
         const response = await fetch(url);
 
-        console.log('[NEWS-API] Response Status:', response.status, response.statusText);
+
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[NEWS-API] Error Response Body:', errorText);
+
 
             let errorData;
             try {
                 errorData = JSON.parse(errorText);
-                console.error('[NEWS-API] Parsed Error Data:', JSON.stringify(errorData, null, 2));
+
             } catch (e) {
-                console.error('[NEWS-API] Could not parse error response as JSON');
+
             }
 
             throw new Error(`SerpAPI request failed with status ${response.status}: ${errorText.substring(0, 200)}`);
         }
 
         const data = await response.json();
-        console.log('[NEWS-API] Success - Received', data.news_results ? data.news_results.length : 0, 'news items');
+
         return res.send(formatToolResponse("latest-news", location, data.news_results));
     } catch (error) {
-        console.error('[NEWS-API] Error:', error.message);
-        console.error('[NEWS-API] Error Stack:', error.stack);
+
         return res.status(502).json({ error: "Failed to fetch news" });
     }
 });
@@ -1077,25 +1173,25 @@ app.get("/api/tool/local-events/:city?", async (req, res) => {
             "city": encodeURIComponent(city)
         });
 
-        console.log('[EVENTS-API] Request Details:');
+
         console.log('  URL:', url);
         console.log('  City:', city);
         console.log('  API Key present:', !!apiKey);
 
         const response = await fetch(url);
 
-        console.log('[EVENTS-API] Response Status:', response.status, response.statusText);
+
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error('[EVENTS-API] Error Response Body:', errorText);
+
 
             let errorData;
             try {
                 errorData = JSON.parse(errorText);
-                console.error('[EVENTS-API] Parsed Error Data:', JSON.stringify(errorData, null, 2));
+
             } catch (e) {
-                console.error('[EVENTS-API] Could not parse error response as JSON');
+
             }
 
             throw new Error(`SerpAPI request failed with status ${response.status}: ${errorText.substring(0, 200)}`);
@@ -1103,7 +1199,7 @@ app.get("/api/tool/local-events/:city?", async (req, res) => {
 
         const data = await response.json();
         const events = data.events_results || [];
-        console.log('[EVENTS-API] Success - Received', events.length, 'events');
+
 
         // Limit to first 3 events and format response
         const topEvents = events.slice(0, 3).map(event => {
@@ -1124,8 +1220,7 @@ app.get("/api/tool/local-events/:city?", async (req, res) => {
 
         return res.send(formatToolResponse("local-events", city, topEvents));
     } catch (error) {
-        console.error('[EVENTS-API] Error:', error.message);
-        console.error('[EVENTS-API] Error Stack:', error.stack);
+
         return res.status(502).json({ error: "Failed to fetch events" });
     }
 });
@@ -1145,16 +1240,13 @@ app.get("/api/tool/currency-convert/:param?", async (req, res) => {
         if (involvesTRY) {
             // Use altinkaynak for Turkish Lira conversions
             endpoint = apiEndpoints.altinkaynak.currency;
-            console.log(`[CURRENCY] Using altinkaynak endpoint for TRY conversion`);
         } else if (involvesUSD) {
             // Use exchangeRates for USD conversions with other currencies
             const apiKey = process.env.OPENEXCHANGERATES_KEY;
             endpoint = apiEndpoints.openexchangerates.latest.replace('{{OPENEXCHANGERATES_KEY}}', apiKey);
-            console.log(`[CURRENCY] Using exchangeRates endpoint for USD conversion`);
         } else {
             // Default to altinkaynak for other currency pairs
             endpoint = apiEndpoints.altinkaynak.currency;
-            console.log(`[CURRENCY] Using altinkaynak endpoint (default)`);
         }
 
         const response = await fetch(endpoint);
@@ -1194,7 +1286,7 @@ app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
             lat === null || lon === null ||
             lat === undefined || lon === undefined) {
 
-            console.log(`[POI-SEARCH] Invalid coordinates (${lat},${lon}), using geoip fallback`);
+
 
             // Get IP address
             const ip = (req.headers["x-forwarded-for"] ||
@@ -1210,13 +1302,13 @@ app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
             if (geo.result && geo.lat && geo.lon) {
                 lat = geo.lat;
                 lon = geo.lon;
-                console.log(`[POI-SEARCH] Using geoip coordinates: ${lat},${lon} (${geo.city}, ${geo.country})`);
+
             } else {
                 return res.status(400).json({ error: "Unable to determine location from IP or coordinates" });
             }
         }
 
-        console.log(`[POI-SEARCH] Searching for "${query}" near ${lat},${lon}`);
+
 
         const url = apiEndpoints.google_places.text_search.render({
             "GPLACES_KEY": apiKey,
@@ -1285,9 +1377,9 @@ app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
             }))
         };
 
-        console.log(`[POI-SEARCH] Found ${results.results.length} results, sorted by distance`);
+
         if (results.results.length > 0) {
-            console.log(`[POI-SEARCH] Closest: ${results.results[0].name} at ${results.results[0].distance}`);
+
         }
 
         return res.send(formatToolResponse("poi-search", query, results));
@@ -1319,11 +1411,10 @@ app.get("/api/tool/get-address/:coordinates", async (req, res) => {
 
         // Check for 0.00,0.00 coordinates (unable to determine location)
         if (lat === 0 && lon === 0) {
-            console.log(`[GET-ADDRESS] Denied request for 0.00,0.00 coordinates`);
             return res.status(400).json({ error: "unable to determine your coordinates" });
         }
 
-        console.log(`[GET-ADDRESS] Reverse geocoding ${lat},${lon}`);
+
 
         const address = await reverseGeocode(lat, lon, apiKey);
 
@@ -1336,7 +1427,7 @@ app.get("/api/tool/get-address/:coordinates", async (req, res) => {
             formatted_address: address
         };
 
-        console.log(`[GET-ADDRESS] Found address: ${address}`);
+
         return res.send(formatToolResponse("get-address", coordinates, result));
     } catch (error) {
         console.error("Get address error:", error);
@@ -1457,7 +1548,7 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
         const getIATACode = async (cityOrCode) => {
             // If it's already a 3-letter IATA code, return it
             if (/^[A-Z]{3}$/i.test(cityOrCode)) {
-                console.log(`[FLIGHT-SEARCH] Already an IATA code: ${cityOrCode}`);
+
                 return cityOrCode.toUpperCase();
             }
 
@@ -1468,12 +1559,12 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
                 "SERPAPI_KEY": apiKey
             });
 
-            console.log(`[FLIGHT-SEARCH] Searching for airport code: "${searchQuery}"`);
+
 
             try {
                 const searchResponse = await fetch(searchUrl);
                 if (!searchResponse.ok) {
-                    console.error(`[FLIGHT-SEARCH] Search failed for ${cityOrCode}`);
+
                     return cityOrCode;
                 }
 
@@ -1484,14 +1575,14 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
                     const answer = searchData.answer_box.answer;
                     const iataMatch = answer.match(/\b([A-Z]{3})\b/);
                     if (iataMatch) {
-                        console.log(`[FLIGHT-SEARCH] Found IATA code in answer box: ${iataMatch[1]}`);
+
                         return iataMatch[1];
                     }
                 }
 
                 // Check knowledge graph
                 if (searchData.knowledge_graph?.iata_code) {
-                    console.log(`[FLIGHT-SEARCH] Found IATA code in knowledge graph: ${searchData.knowledge_graph.iata_code}`);
+
                     return searchData.knowledge_graph.iata_code.toUpperCase();
                 }
 
@@ -1510,16 +1601,16 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
                     for (const pattern of patterns) {
                         const match = snippet.match(pattern);
                         if (match && match[1]) {
-                            console.log(`[FLIGHT-SEARCH] Found IATA code in snippet: ${match[1]}`);
+
                             return match[1].toUpperCase();
                         }
                     }
                 }
 
-                console.log(`[FLIGHT-SEARCH] Could not find IATA code for ${cityOrCode}, using original value`);
+
                 return cityOrCode;
             } catch (error) {
-                console.error(`[FLIGHT-SEARCH] Error searching for IATA code: ${error.message}`);
+
                 return cityOrCode;
             }
         };
@@ -1552,11 +1643,8 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
         const arrivalId = await getIATACode(destination);
         let searchDate = new Date(parseDate(dateStr));
 
-        console.log('[FLIGHT-SEARCH] Request Details:');
-        console.log('  Origin:', origin, '→ IATA:', departureId);
-        console.log('  Destination:', destination, '→ IATA:', arrivalId);
-        console.log('  Initial Date:', dateStr, '→ Formatted:', searchDate.toISOString().split('T')[0]);
-        console.log('  API Key present:', !!apiKey);
+
+
 
         // Loop through next 10 days to find flights
         let allFlights = [];
@@ -1574,7 +1662,7 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
             const dd = String(currentSearchDate.getDate()).padStart(2, '0');
             const formattedDate = `${yyyy}-${mm}-${dd}`;
 
-            console.log(`[FLIGHT-SEARCH] Day ${dayOffset + 1}/10: Searching for ${formattedDate}`);
+
 
             // Build SerpAPI request URL
             const url = apiEndpoints.serpapi_flights.flight_search.render({
@@ -1590,7 +1678,7 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
             const response = await fetch(url);
 
             if (!response.ok) {
-                console.log(`[FLIGHT-SEARCH] Day ${dayOffset + 1}: API request failed with status ${response.status}`);
+
                 continue; // Try next day
             }
 
@@ -1599,20 +1687,20 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
             const otherFlights = data.other_flights || [];
             const dayFlights = [...bestFlights, ...otherFlights];
 
-            console.log(`[FLIGHT-SEARCH] Day ${dayOffset + 1}: Found ${dayFlights.length} flights`);
+
 
             // If flights found, use them and stop searching
             if (dayFlights.length > 0) {
                 allFlights = dayFlights;
                 finalSearchDate = formattedDate;
-                console.log(`[FLIGHT-SEARCH] Success - Found ${allFlights.length} flights on ${formattedDate}`);
+
                 break;
             }
         }
 
         // If no flights found after 10 days
         if (allFlights.length === 0) {
-            console.log('[FLIGHT-SEARCH] No flights found in next 10 days');
+
             return res.send(formatToolResponse("flight-search", param, {
                 search: {
                     origin: origin,
@@ -1666,8 +1754,6 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
 
         return res.send(formatToolResponse("flight-search", param, result));
     } catch (error) {
-        console.error('[FLIGHT-SEARCH] Error:', error.message);
-        console.error('[FLIGHT-SEARCH] Error Stack:', error.stack);
         return res.status(502).json({ error: "Failed to fetch flight data" });
     }
 });
@@ -1685,7 +1771,6 @@ app.get("/api/tool/author/:param", async (req, res) => {
     }
 
     try {
-        console.log(`[AUTHOR] Generating content for: "${param}"`);
 
         // Load author prompt instructions
         const authorPrompt = fs.readFileSync("./content/agent-author.md", "utf8").trim();
@@ -1698,7 +1783,6 @@ app.get("/api/tool/author/:param", async (req, res) => {
 
         // Try Anthropic API first
         if (process.env.ANTHROPIC_API_KEY) {
-            console.log(`[AUTHOR] Using Anthropic API`);
             response = await fetch('https://api.anthropic.com/v1/messages', {
                 method: 'POST',
                 headers: {
@@ -1725,7 +1809,6 @@ app.get("/api/tool/author/:param", async (req, res) => {
         }
         // Fallback to OpenAI API
         else if (process.env.OPENAI_API_KEY) {
-            console.log(`[AUTHOR] Using OpenAI API`);
             response = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -1755,13 +1838,18 @@ app.get("/api/tool/author/:param", async (req, res) => {
             throw new Error('No API key configured');
         }
 
-        console.log(`[AUTHOR] Content generated successfully (${contentResult.length} chars)`);
+        // Log author tool call and result
+        console.log('\n=== TOOL CALL ===');
+        console.log(`  Command: author`);
+        console.log(`  Parameter: ${param}`);
+        console.log(`  Result length: ${contentResult ? contentResult.length : 0} characters`);
+        console.log(`  Result preview: ${contentResult ? contentResult.substring(0, 200) + '...' : 'No content'}`);
+        console.log('=================\n');
 
         // Return the generated content directly (it already includes XML formatting)
         return res.send(contentResult);
     } catch (error) {
-        console.error('[AUTHOR] Error:', error.message);
-        console.error('[AUTHOR] Error Stack:', error.stack);
+
         return res.status(502).json({ error: "Failed to generate content" });
     }
 });
@@ -1791,7 +1879,7 @@ app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
             return res.status(400).json({ error: "Missing required fields: category, user_request, user_transcript" });
         }
 
-        console.log('[TUNE-BEHAVIOUR] Received request:');
+
         console.log('  IP:', ip);
         console.log('  Country:', geo.country);
         console.log('  City:', geo.city);
@@ -1803,7 +1891,6 @@ app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
         const userDir = path.join(__dirname, './user');
         if (!fs.existsSync(userDir)) {
             fs.mkdirSync(userDir, { recursive: true });
-            console.log('[TUNE-BEHAVIOUR] Created ./user directory');
         }
 
         // Path to requests file
@@ -1825,7 +1912,7 @@ app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
         // Append to file (create if doesn't exist)
         fs.appendFileSync(requestsFile, entry, 'utf8');
 
-        console.log('[TUNE-BEHAVIOUR] Request logged to', requestsFile);
+
 
         return res.json({
             success: true,
@@ -1834,19 +1921,404 @@ app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
         });
 
     } catch (error) {
-        console.error('[TUNE-BEHAVIOUR] Error:', error.message);
-        console.error('[TUNE-BEHAVIOUR] Error Stack:', error.stack);
+
         return res.status(500).json({ error: "Failed to process tune-behaviour request" });
     }
 });
 
-app.get("*", (req, res) => {
-    // Simply serve index.html without creating any sessions
-    // Sessions will be created when /api/signed-url is called
-    res.sendFile(path.join(__dirname, "./dist/index.html"));
+app.get("*", async (req, res) => {
+    {
+        // Simply serve index.html without creating any sessions
+        // Sessions will be created when /api/signed-url is called
+        try {
+            const filePath = path.join(__dirname, "./dist/index.html");
+            await sendCompressedFile(req, res, filePath);
+        } catch (_) {
+            res.sendFile(path.join(__dirname, "./dist/index.html"));
+        }
+    }
 });
 
+// Create HTTP server to attach WebSocket server
+const server = http.createServer(app);
+
+// --- WebSocket server (ws) ---
+let wss;
+try {
+    const { WebSocketServer } = require('ws');
+
+    // Helper: parse cookies from header
+    const parseCookies = (cookieHeader) => {
+        const out = {};
+        if (!cookieHeader) return out;
+        cookieHeader.split(';').forEach(pair => {
+            const idx = pair.indexOf('=');
+            if (idx > -1) {
+                const key = pair.slice(0, idx).trim();
+                const val = decodeURIComponent(pair.slice(idx + 1).trim());
+                out[key] = val;
+            }
+        });
+        return out;
+    };
+
+    wss = new WebSocketServer({ server, path: '/ws' });
+    const clients = new Set();
+
+    wss.on('connection', (ws, req) => {
+        const cookies = parseCookies(req.headers['cookie'] || '');
+        const sid = cookies.sid || null;
+        const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
+
+        // Enforce valid sid cookie that maps to an active session
+        if (!sid || !sessions["_" + sid]) {
+            try { ws.close(1008, 'Invalid session'); } catch (_) { }
+            return;
+        }
+
+        clients.add(ws);
+        ws.__sid = sid;
+        ws.__chatMode = false; // Track if this is a chat mode connection
+
+
+        // Initial hello
+        ws.send(JSON.stringify({ type: 'hello', sid, time: Date.now() }));
+
+        ws.on('message', async (data) => {
+            let msg = null;
+            try { msg = JSON.parse(data.toString()); } catch (_) { }
+            if (!msg) {
+                ws.send(data);
+                return;
+            }
+
+            if (msg.type === 'ping') {
+                ws.send(JSON.stringify({ type: 'pong', time: Date.now() }));
+                return;
+            }
+            if (msg.type === 'log') {
+                return;
+            }
+            if (msg.type === 'broadcast') {
+                for (const client of clients) {
+                    if (client.readyState === 1 && client.__sid === ws.__sid) {
+                        client.send(JSON.stringify({ type: 'broadcast', payload: msg.payload }));
+                    }
+                }
+                return;
+            }
+
+            // Handle chat mode initialization
+            if (msg.type === 'init_chat') {
+                ws.__chatMode = true;
+                const sessionData = sessions["_" + ws.__sid];
+                ws.send(JSON.stringify({
+                    type: 'chat_ready',
+                    systemPrompt: sessionData?.systemPrompt || 'You are a helpful assistant.'
+                }));
+                return;
+            }
+
+            // Handle chat messages - stream from Ollama
+            if (msg.type === 'chat_message' && ws.__chatMode) {
+                const userMessage = msg.message || '';
+                const sessionData = sessions["_" + ws.__sid];
+                const conversationHistory = msg.history || [];
+                const temperature = msg.temperature !== undefined ? msg.temperature : 0.7;
+
+
+
+                try {
+                    // Call Ollama API with streaming (no native tool calls)
+                    const ollamaUrl = process.env.OLLAMA_URL || 'http://localhost:11434';
+                    //                    const ollamaModel = process.env.OLLAMA_MODEL || 'kimi-k2:1t-cloud';
+                    const ollamaModel = process.env.OLLAMA_MODEL || 'gpt-oss:120b-cloud';
+
+                    // Build messages array for Ollama
+                    const messages = [
+                        { role: 'system', content: sessionData?.systemPrompt || 'You are a helpful assistant.' },
+                        ...conversationHistory,
+                        { role: 'user', content: userMessage }
+                    ];
+
+                    const requestBody = {
+                        model: ollamaModel,
+                        messages: messages,
+                        stream: true,
+                        options: {
+                            temperature: temperature
+                        }
+                    };
+
+                    const response = await fetch(`${ollamaUrl}/api/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(requestBody)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+                    }
+
+                    // Stream the response using Web Streams API
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let jsonBuffer = '';
+                    let completeResponse = ''; // Accumulate complete response for logging
+                    let tokenBuffer = ''; // Buffer for batching tokens
+                    const MIN_BUFFER_SIZE = 16; // Minimum characters before releasing
+
+                    async function processStream() {
+                        try {
+                            while (true) {
+                                const { done, value } = await reader.read();
+
+                                if (done) {
+                                    // Send any remaining buffered tokens
+                                    if (tokenBuffer.length > 0) {
+                                        ws.send(JSON.stringify({
+                                            type: 'token',
+                                            token: tokenBuffer
+                                        }));
+                                        tokenBuffer = '';
+                                    }
+
+
+                                    ws.send(JSON.stringify({ type: 'done' }));
+                                    break;
+                                }
+
+                                // Decode chunk and add to JSON buffer
+                                jsonBuffer += decoder.decode(value, { stream: true });
+                                const lines = jsonBuffer.split('\n');
+                                jsonBuffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+                                for (const line of lines) {
+                                    if (line.trim()) {
+                                        try {
+                                            const json = JSON.parse(line);
+                                            if (json.message?.content) {
+                                                completeResponse += json.message.content; // Accumulate response
+                                                tokenBuffer += json.message.content; // Add to token buffer
+
+                                                // Release buffer when it reaches minimum size
+                                                if (tokenBuffer.length >= MIN_BUFFER_SIZE) {
+                                                    ws.send(JSON.stringify({
+                                                        type: 'token',
+                                                        token: tokenBuffer
+                                                    }));
+                                                    tokenBuffer = '';
+                                                }
+                                            }
+                                        } catch (e) {
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (streamError) {
+                            ws.send(JSON.stringify({
+                                type: 'chat_error',
+                                error: streamError.message
+                            }));
+                        }
+                    }
+
+                    processStream();
+
+                } catch (error) {
+                    ws.send(JSON.stringify({
+                        type: 'chat_error',
+                        error: error.message
+                    }));
+                }
+                return;
+            }
+
+            // Handle tool execution request from client
+            if (msg.type === 'execute_tool' && ws.__chatMode) {
+                const { tool, param } = msg;
+
+                console.log('\n=== TOOL CALL (WebSocket) ===');
+                console.log(`  Tool: ${tool}`);
+                console.log(`  Parameter: ${param}`);
+                console.log(`  Session ID: ${ws.__sid}`);
+
+                try {
+                    let result;
+
+                    // Map tool names to API endpoints (similar to voice mode)
+                    switch (tool) {
+                        case 'image-search':
+                            const imageUrl = `http://127.0.0.1:${PORT}/api/tool/image-search/${encodeURIComponent(param)}`;
+                            const imageResp = await fetch(imageUrl, { headers: { 'Cookie': `sid=${ws.__sid}` } });
+                            result = await imageResp.json();
+                            break;
+
+                        case 'web-search':
+                        case 'get-weather':
+                        case 'latest-news':
+                        case 'currency-convert':
+                        case 'latest-earthquakes':
+                        case 'visible-aircraft':
+                        case 'get-address':
+                            const apiUrl = `http://127.0.0.1:${PORT}/api/tool/${tool}/${encodeURIComponent(param || '')}`;
+                            const apiResp = await fetch(apiUrl, { headers: { 'Cookie': `sid=${ws.__sid}` } });
+                            result = await apiResp.text();
+                            break;
+
+                        case 'poi-search':
+                            const sessionData = sessions["_" + ws.__sid];
+                            const lat = sessionData?.lat || 0;
+                            const lon = sessionData?.lon || 0;
+                            const coords = `${lat},${lon}`;
+                            const poiUrl = `http://127.0.0.1:${PORT}/api/tool/poi-search/${encodeURIComponent(coords)}/${encodeURIComponent(param)}`;
+                            const poiResp = await fetch(poiUrl, { headers: { 'Cookie': `sid=${ws.__sid}` } });
+                            result = await poiResp.text();
+                            break;
+
+                        case 'flight-search':
+                            const flightUrl = `http://127.0.0.1:${PORT}/api/tool/flight-search/${encodeURIComponent(param)}`;
+                            const flightResp = await fetch(flightUrl, { headers: { 'Cookie': `sid=${ws.__sid}` } });
+                            result = await flightResp.text();
+                            break;
+
+                        case 'local-events':
+                            const eventsUrl = `http://127.0.0.1:${PORT}/api/tool/local-events/${encodeURIComponent(param)}`;
+                            const eventsResp = await fetch(eventsUrl, { headers: { 'Cookie': `sid=${ws.__sid}` } });
+                            result = await eventsResp.text();
+                            break;
+
+                        case 'calculator':
+                            const { evaluate } = require('mathjs');
+                            try {
+                                const calcResult = evaluate(param);
+                                result = String(calcResult);
+                            } catch (error) {
+                                result = `Error: ${error.message}`;
+                            }
+                            break;
+
+                        case 'author':
+                            const authorUrl = `http://127.0.0.1:${PORT}/api/tool/author/${encodeURIComponent(param)}`;
+                            const authorResp = await fetch(authorUrl, { headers: { 'Cookie': `sid=${ws.__sid}` } });
+                            result = await authorResp.text();
+                            break;
+
+                        default:
+                            result = `Unknown tool: ${tool}`;
+                    }
+
+                    // Log tool result
+                    console.log(`  Result: ${typeof result === 'string' ? result.substring(0, 200) + '...' : JSON.stringify(result, null, 2)}`);
+                    console.log('===========================\n');
+
+                    // Send result back to client
+                    ws.send(JSON.stringify({
+                        type: 'tool_result',
+                        tool: tool,
+                        result: result
+                    }));
+
+                } catch (error) {
+                    ws.send(JSON.stringify({
+                        type: 'tool_error',
+                        tool: tool,
+                        error: error.message
+                    }));
+                }
+                return;
+            }
+
+            if (msg.type === 'api') {
+                const id = msg.id || null;
+                const method = (msg.method || 'GET').toUpperCase();
+                const path = String(msg.url || '/');
+
+                if (!id) return;
+                try {
+                    const target = `http://127.0.0.1:${PORT}${path}`;
+                    const headers = {
+                        'Cookie': `sid=${ws.__sid}`
+                    };
+                    let body;
+                    if (method !== 'GET' && method !== 'HEAD') {
+                        if (msg.json) {
+                            headers['Content-Type'] = 'application/json';
+                            body = JSON.stringify(msg.json);
+                        } else if (typeof msg.bodyText === 'string') {
+                            body = msg.bodyText;
+                        }
+                    }
+
+                    const resp = await fetch(target, { method, headers, body });
+                    const contentType = resp.headers.get('content-type') || '';
+                    const ab = await resp.arrayBuffer();
+                    const b64 = Buffer.from(ab).toString('base64');
+                    ws.send(JSON.stringify({
+                        type: 'apiResponse',
+                        id,
+                        status: resp.status,
+                        contentType,
+                        bodyBase64: b64
+                    }));
+                } catch (e) {
+                    ws.send(JSON.stringify({
+                        type: 'apiResponse',
+                        id: msg.id,
+                        status: 502,
+                        contentType: 'text/plain',
+                        bodyBase64: Buffer.from(String(e?.message || e)).toString('base64')
+                    }));
+                }
+                return;
+            }
+
+            // Default: echo typed message
+            ws.send(JSON.stringify({ type: 'echo', payload: msg }));
+        });
+
+        ws.on('close', () => {
+            clients.delete(ws);
+        });
+
+        ws.on('error', (err) => {
+        });
+    });
+
+    // Periodic ping to keep connections alive
+    const interval = setInterval(() => {
+        for (const ws of clients) {
+            if (ws.readyState !== 1) continue;
+            try { ws.ping(); } catch (_) { }
+        }
+    }, 30000);
+
+    wss.on('close', () => clearInterval(interval));
+
+} catch (e) {
+
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}: http://localhost:${PORT}`);
+    if (wss) console.log(`WebSocket listening at ws://localhost:${PORT}/ws`);
+});
+
+// Minimal onmessage endpoint (stub)
+// Validates sid cookie and echoes payload; extend as needed.
+app.post('/api/onmessage', express.json(), (req, res) => {
+    try {
+        const sid = req.cookies.sid;
+        if (!sid || !sessions['_' + sid]) {
+            return res.status(403).json({ error: 'Invalid or missing session ID' });
+        }
+
+        const body = req.body || {};
+        return res.json({ success: true });
+    } catch (e) {
+        return res.status(500).json({ error: 'onmessage failed' });
+    }
 });

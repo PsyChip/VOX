@@ -1,25 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(///**)",
       "Bash(cat:*)",
-      "Bash(npm run build:*)",
-      "WebSearch",
-      "WebFetch(domain:mathjs.org)",
-      "Bash(grep:*)",
-      "Bash(find:*)",
-      "Bash(for lang in it fr es de nl ru)",
-      "Bash(do echo \"=== $lang ===\")",
-      "Bash(ls:*)",
-      "Bash(done)",
-      "Bash(wc:*)",
-      "Bash(npm install:*)",
-      "Bash(git log:*)",
-      "Bash(npm i:*)",
-      "Bash(node:*)",
-      "Bash(python3:*)",
-      "Bash(mkdir:*)",
-      "Bash(chmod:*)"
+      "Bash(python3:*)"
     ],
     "deny": [],
     "ask": []

@@ -4,8 +4,8 @@
   "description": "A conversational AI agent with real-time audio visualization and integrated tools",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#000000",
-  "theme_color": "#00ff00",
+  "background_color": "#222222",
+  "theme_color": "#1b5e00",
   "orientation": "portrait",
   "icons": [
     {

@@ -1,0 +1,242 @@
+/* Chat Mode - Minimal Terminal Interface */
+
+body.chat-mode {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    overflow: hidden;
+}
+
+#chatModeContainer {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Courier New', Consolas, Monaco, monospace;
+}
+
+#chatMessages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    color: #0f0;
+    background: #000;
+}
+
+.chat-message {
+    margin-bottom: 15px;
+    /* line-height: 1.5; */
+}
+
+.chat-message .role {
+    /* font-weight: bold; */
+    margin-bottom: 5px;
+    /* color: #0f0; */
+}
+
+.chat-message.user .role {
+    color: #474747;
+}
+
+.chat-message.assistant .role {
+    color: #414141;
+}
+
+.chat-message .content {
+    color: #ffffff;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.chat-message.user .content {
+    color:#ff0000;
+    /* text-align: right; */
+}
+
+.chat-message.assistant {
+    /* text-align: left; */
+}
+
+/* System messages */
+.chat-message.system {
+    opacity: 0.25;
+}
+
+/* Tool messages */
+.chat-message.tool {}
+
+.chat-message.tool .role {
+    color: #ffaa00;
+}
+
+.chat-message.tool .content {
+    font-family: "Consolas", "courier new", monospace;
+}
+
+.chat-message.tool .content {
+    color: #ffaa00;
+    font-size: 12px;
+}
+
+.chat-message.tool .content {
+    font-size: 14px;
+}
+
+/* Tool result messages */
+.chat-message.tool-result .content {
+    font-family: "Consolas", "Courier new", monospace;
+    color: #666;
+    font-size: 12px !important;
+}
+
+.chat-message.tool-result .role {
+    color: #7b7b7b;
+}
+
+.chat-message.tool-result .content {
+    font-size: 14px;
+    /* max-height: 300px; */
+    /* overflow-y: auto; */
+}
+
+#chatInputContainer {
+    display: flex;
+    align-items: center;
+    padding: 20px;
+    /* background: #000; */
+    /* border-top: 1px solid #0f0; */
+    gap: 10px;
+}
+
+#temperatureControl {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 80px;
+}
+
+#temperatureControl label {
+    color: #0f0;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+#temperatureSlider {
+    width: 80px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: #003300;
+    outline: none;
+    cursor: pointer;
+}
+
+#temperatureSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    background: #0f0;
+    cursor: pointer;
+}
+
+#temperatureSlider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    background: #0f0;
+    cursor: pointer;
+    border: none;
+}
+
+#chatInput {
+    flex: 1;
+    background: #2a2a2a;
+    border: none;
+    color: #0f0;
+    padding: 10px;
+    font-family: "Jost", "Helvetica", "Arial", sans-serif;
+    font-size: 18px;
+    resize: none;
+}
+
+#chatInput:focus {
+    outline: none;
+    border-color: #0f0;
+}
+
+#chatSendBtn {
+    margin-left: 10px;
+    padding: 10px 20px;
+    background: #0f0;
+    color: #000;
+    border: none;
+    font-family: 'Courier New', Consolas, Monaco, monospace;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+#chatSendBtn:hover {
+    background: #0f0;
+    opacity: 0.8;
+}
+
+#chatSendBtn:disabled {
+    background: #003300;
+    color: #006600;
+    cursor: not-allowed;
+}
+
+/* Scrollbar styling */
+#chatMessages::-webkit-scrollbar {
+    width: 8px;
+}
+
+#chatMessages::-webkit-scrollbar-track {
+    background: #000;
+}
+
+#chatMessages::-webkit-scrollbar-thumb {
+    background: #0f0;
+}
+
+/* Hide other UI elements when in chat mode */
+body.chat-mode #canvas,
+body.chat-mode #volumeCanvas,
+body.chat-mode #subtitle,
+body.chat-mode #topicDisplay,
+body.chat-mode #callControls,
+body.chat-mode #textInputWindow,
+body.chat-mode #debugConsole,
+body.chat-mode #languageSelectionOverlay,
+body.chat-mode #loaderOverlay {
+    display: none !important;
+}
+
+/* Raw response block under assistant messages */
+.chat-message.assistant .raw {
+    margin-top: 6px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 11px;
+    color: #8b8b8b;
+    white-space: pre-wrap;
+    opacity: 0.85;
+}
+
+/* Keep connection quality visible in chat mode */
+body.chat-mode #topRightControls {
+    display: flex !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+/* Hide only utility buttons; keep language indicator visible */
+body.chat-mode #topRightControls .utility-btn {
+    display: none !important;
+}
+
+/* Gallery canvas is visible when images are loaded */
+/* Image modal is visible only when it has the 'show' class (controlled by JS) */

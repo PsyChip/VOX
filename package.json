@@ -12,6 +12,7 @@
   "dependencies": {
     "@elevenlabs/client": "^0.7.0",
     "@maxmind/geoip2-node": "^6.1.0",
+    "ws": "^8.17.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
