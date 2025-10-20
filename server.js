@@ -37,6 +37,44 @@ var sessions = {};
 
 // Transcript management - removed as transcripts now save to user/[sid]/
 
+// Send JSON possibly compressed depending on Accept-Encoding
+function sendMaybeCompressedJSON(req, res, payload, statusCode = 200) {
+    try {
+        const accept = (req.headers['accept-encoding'] || '').toString();
+        const json = JSON.stringify(payload);
+        const buf = Buffer.from(json, 'utf8');
+        res.set('Vary', 'Accept-Encoding');
+        res.type('application/json');
+        if (accept.includes('br') && typeof zlib.brotliCompress === 'function') {
+            return zlib.brotliCompress(buf, {
+                params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 }
+            }, (err, out) => {
+                if (err) return res.status(statusCode).send(buf);
+                res.set('Content-Encoding', 'br');
+                return res.status(statusCode).send(out);
+            });
+        }
+        if (accept.includes('gzip')) {
+            return zlib.gzip(buf, { level: zlib.constants.Z_BEST_SPEED }, (err, out) => {
+                if (err) return res.status(statusCode).send(buf);
+                res.set('Content-Encoding', 'gzip');
+                return res.status(statusCode).send(out);
+            });
+        }
+        if (accept.includes('deflate')) {
+            return zlib.deflate(buf, (err, out) => {
+                if (err) return res.status(statusCode).send(buf);
+                res.set('Content-Encoding', 'deflate');
+                return res.status(statusCode).send(out);
+            });
+        }
+        // Fallback: plain JSON
+        return res.status(statusCode).json(payload);
+    } catch (_) {
+        return res.status(statusCode).json(payload);
+    }
+}
+
 // Format duration for human readability
 function formatDuration(ms) {
     if (ms < 1000) return `${ms}ms`;
@@ -1027,7 +1065,7 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
         const hasXI = !!process.env.XI_API_KEY && !!process.env.AGENT_ID;
         if (isChatMode || !hasXI) {
             // For chat mode or when XI is not configured, skip signed URL and return minimal payload
-            return res.json(payload);
+            return sendMaybeCompressedJSON(req, res, payload);
         }
 
         // Voice mode: fetch ElevenLabs signed URL as before
@@ -1039,11 +1077,11 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
         }
         const data = await response.json();
         payload.signedUrl = data.signed_url;
-        return res.json(payload);
+        return sendMaybeCompressedJSON(req, res, payload);
     } catch (error) {
         // If chat mode, still return payload; else error
         if (req.query.mode === 'chat') {
-            return res.json(payload);
+            return sendMaybeCompressedJSON(req, res, payload);
         }
         return res.status(500).json({ error: 'Failed to get signed URL', details: error.message });
     }
