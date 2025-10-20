@@ -123,32 +123,6 @@ export function handleLink(href, title, target) {
     try { window._action.play(); } catch (_) { }
   }
 }
-
-export function handleFile(file) {
-  if (!file || !file.attr || !file.attr.type || !file.attr.name) {
-    return;
-  }
-  const mimeType = file.attr.type;
-  const fileName = file.attr.name;
-  let content = file.attr.content || file.text || '';
-  content = content.replace(/\|/g, '\n');
-
-  const ctx = `User downloaded file: ${fileName}`;
-  try { if (window.conversation && window.conversation.sendContextualUpdate) window.conversation.sendContextualUpdate(ctx); } catch (_) { }
-  try { if (window.debugLog) window.debugLog(`CONTEXT: ${ctx}`, 'system'); } catch (_) { }
-
-  showNotification(fileName, 'File saved to disk');
-  const blob = new Blob([content], { type: mimeType });
-  const blobUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = blobUrl;
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-}
-
 // Touch UI initializer
 export function initTouchUI(timeoutMs = 5000) {
   const isTouchDevice = ('ontouchstart' in window) ||

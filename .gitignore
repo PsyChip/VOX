@@ -11,3 +11,6 @@ last_system_prompt.md
 user/
 user/*
 dist/bundle-report.html
+CLAUDE.md
+# Conversation transcripts
+transcripts/

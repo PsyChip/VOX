@@ -1,13 +1,3 @@
-// Generic utility helpers that do not depend on app state
-
-export function b64ToArrayBuffer(base64) {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-  return bytes.buffer;
-}
-
 export function getLocalTime24() {
   const now = new Date();
   return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });

@@ -2,8 +2,8 @@
 
 import { Conversation } from '@elevenlabs/client';
 import { evaluate } from 'mathjs';
-import { detectPerformance, getDayPhase, b64ToArrayBuffer, getLocalTime24, tzOffset, isStereoMix, stripXmlTags, xmlToJson } from './utils';
-import { showDisconnectionBox, hideDisconnectionBox, updateTopicDisplay, clearTopicDisplay, showCategoryIndicator, handleLink, handleFile, showNotification, initTouchUI } from './ui';
+import { detectPerformance, getDayPhase, getLocalTime24, tzOffset, isStereoMix, stripXmlTags, xmlToJson } from './utils';
+import { showDisconnectionBox, hideDisconnectionBox, updateTopicDisplay, clearTopicDisplay, showCategoryIndicator, handleLink, showNotification, initTouchUI } from './ui';
 
 const SPEECH_THRESHOLD = 15;
 const SILENCE_THRESHOLD = 10;
@@ -13,6 +13,12 @@ const TOUCH_UI_TIMEOUT = 5000;
 const COORDINATE_CHECK_INTERVAL = 60000;
 const DRIFT_REMINDER_INTERVAL = 10;
 const DRIFT_REMINDER_DELAY = 15000;
+
+// Context behavior control:
+// 0 = No contextual updates at all
+// 1 = Use conversation.sendContextualUpdate()
+// 2 = Use conversation.sendUserMessage() for cross-model compatibility
+const CONTEXT_BEHAVIOUR = 0;
 
 const config = {
     circleRadius: 80,
@@ -36,10 +42,100 @@ let speechSamplesAboveThreshold = 0;
 let lastSpeechTimestamp = 0;
 window.lowEnd = false;
 
+// Global speaking state indicator
+// -1: not connected, 0: idle, 1: agent talking, 2: user talking
+let speakingState = -1;
+let speakingStateStartTime = Date.now();  // Track when current state started
+
+// Global speaking time indicator (in milliseconds)
+// Shows how long the current state has been active
+let speakingTime = 0;
+
+// State debouncing variables
+const STATE_DEBOUNCE_TIME = 100;  // Minimum time (ms) a state must persist
+let pendingState = null;
+let pendingStateTime = 0;
+let stateDebounceTimer = null;
+
+function updateSpeakingState(newState, immediate = false) {
+    // For critical state changes (like disconnection), apply immediately
+    if (immediate || newState === -1) {
+        // Clear any pending debounced changes
+        if (stateDebounceTimer) {
+            clearTimeout(stateDebounceTimer);
+            stateDebounceTimer = null;
+            pendingState = null;
+        }
+
+        // Apply state change immediately
+        if (speakingState !== newState) {
+            speakingState = newState;
+            speakingStateStartTime = Date.now();
+            window.speakingState = newState;
+        }
+        return;
+    }
+
+    // If this is the same as current state, cancel any pending change
+    if (speakingState === newState) {
+        if (stateDebounceTimer) {
+            clearTimeout(stateDebounceTimer);
+            stateDebounceTimer = null;
+            pendingState = null;
+        }
+        return;
+    }
+
+    // If we're already waiting for a different state, update the pending state
+    if (pendingState !== newState) {
+        pendingState = newState;
+        pendingStateTime = Date.now();
+
+        // Clear existing timer if any
+        if (stateDebounceTimer) {
+            clearTimeout(stateDebounceTimer);
+        }
+
+        // Set timer to apply the state change after debounce period
+        stateDebounceTimer = setTimeout(() => {
+            // Verify the pending state hasn't changed
+            if (pendingState === newState) {
+                // Apply the state change
+                speakingState = newState;
+                speakingStateStartTime = Date.now();
+                window.speakingState = newState;
+                pendingState = null;
+                stateDebounceTimer = null;
+            }
+        }, STATE_DEBOUNCE_TIME);
+    }
+}
+
+function getSpeakingTime() {
+    return Date.now() - speakingStateStartTime;
+}
+
+function getStateDebugInfo() {
+    return {
+        currentState: speakingState,
+        pendingState: pendingState,
+        stateTime: getSpeakingTime(),
+        hasPendingChange: stateDebounceTimer !== null,
+        debounceTime: STATE_DEBOUNCE_TIME
+    };
+}
+
+// Initialize window variables and functions
+window.speakingState = speakingState;
+window.speakingTime = speakingTime;
+window.getSpeakingTime = getSpeakingTime;  // Export function for external access
+window.getStateDebugInfo = getStateDebugInfo;  // Export debug info function
+
 let waitingForToolResponse = false;
 let rawData = "";
 let isToolLoading = false;
 let userInitialized = false;
+let microphoneErrorOccurred = false;  // Flag to stop initialization on mic error
 
 let ctx = null;
 let w = window.innerWidth;
@@ -71,10 +167,10 @@ let aiResponseCount = 0;
 let conversationStartTime = 0;
 
 
+// WebSocket control channel - kept minimal for potential future features
+// No longer used for API calls - all API calls use direct HTTP
 let controlSocket = null;
 let controlSocketReady = false;
-let controlReqId = 1;
-const controlPending = new Map();
 
 //
 
@@ -176,14 +272,18 @@ const _talk = new sound("/static/sfx/talk.ogg");
 const _action = new sound("/static/sfx/action.ogg");
 
 
-async function wsApiRequest(method, url, jsonBody) {
-    if (!controlSocket || !controlSocketReady) {
-        // Fallback to HTTP fetch if WS not ready
-        const init = { method };
-        if (jsonBody) {
-            init.headers = { 'Content-Type': 'application/json' };
-            init.body = JSON.stringify(jsonBody);
-        }
+async function httpApiRequest(method, url, jsonBody) {
+    // Always use direct HTTP fetch instead of WebSocket proxy
+    const init = {
+        method,
+        credentials: 'same-origin' // Include cookies
+    };
+    if (jsonBody) {
+        init.headers = { 'Content-Type': 'application/json' };
+        init.body = JSON.stringify(jsonBody);
+    }
+
+    try {
         const resp = await fetch(url, init);
         const ct = resp.headers.get('content-type') || '';
         const ab = await resp.arrayBuffer();
@@ -193,19 +293,14 @@ async function wsApiRequest(method, url, jsonBody) {
             try { json = JSON.parse(text); } catch (_) { }
         }
         return { status: resp.status, ok: resp.ok, contentType: ct, text, json, arrayBuffer: ab };
+    } catch (error) {
+        console.error('API request failed:', error);
+        return { status: 0, ok: false, error: error.message };
     }
-
-    const id = controlReqId++;
-    return new Promise((resolve) => {
-        controlPending.set(id, resolve);
-        try {
-            controlSocket.send(JSON.stringify({ type: 'api', id, method, url, json: jsonBody || null }));
-        } catch (e) {
-            controlPending.delete(id);
-            resolve({ status: 0, ok: false, error: e });
-        }
-    });
 }
+
+// Alias for backward compatibility
+const wsApiRequest = httpApiRequest;
 function connectControlSocket(customUrl) {
     try {
         const url = customUrl || (() => {
@@ -250,20 +345,7 @@ function connectControlSocket(customUrl) {
                 try { window.showNotification('Broadcast', String(msg.payload)); } catch (_) { }
                 return;
             }
-            if (msg.type === 'apiResponse' && typeof msg.id === 'number') {
-                const cb = controlPending.get(msg.id);
-                if (cb) {
-                    controlPending.delete(msg.id);
-                    const ab = b64ToArrayBuffer(msg.bodyBase64 || '');
-                    const text = new TextDecoder().decode(new Uint8Array(ab));
-                    let json = null;
-                    if ((msg.contentType || '').includes('application/json')) {
-                        try { json = JSON.parse(text); } catch (_) { }
-                    }
-                    cb({ status: msg.status, ok: msg.status >= 200 && msg.status < 300, contentType: msg.contentType, text, json, arrayBuffer: ab });
-                }
-                return;
-            }
+            // API response handling removed - all API calls now use direct HTTP
         });
 
         ws.addEventListener('close', () => {
@@ -353,7 +435,7 @@ function startCoordinateMonitoring() {
 
                     if (latDiff > 0.0001 || lonDiff > 0.0001) {
                         const contextMsg = `<system-reminder>User's coordinates changed to: ${newCoords.latitude.toFixed(6)}, ${newCoords.longitude.toFixed(6)} use those coordinates on your geographic tool calls.</system-reminder>`;
-                        conversation.sendUserMessage(contextMsg);
+                        sendContextualMessage(contextMsg);
                         lastReportedCoordinates = { ...newCoords };
                     } else {
                     }
@@ -377,6 +459,21 @@ function stopCoordinateMonitoring() {
         clearInterval(coordinateMonitorTimer);
         coordinateMonitorTimer = null;
 
+    }
+}
+
+function sendContextualMessage(message) {
+    if (CONTEXT_BEHAVIOUR === 0) {
+        return;
+    }
+
+    const hasSystemTag = message.includes('<system-reminder>');
+    const wrappedMessage = hasSystemTag ? message : `<system-reminder>${message}</system-reminder>`;
+
+    if (CONTEXT_BEHAVIOUR === 1 && conversation?.sendContextualUpdate) {
+        conversation.sendContextualUpdate(wrappedMessage);
+    } else if (CONTEXT_BEHAVIOUR === 2 && conversation?.sendUserMessage) {
+        conversation.sendUserMessage(wrappedMessage);
     }
 }
 
@@ -760,6 +857,59 @@ function loaderStatus(statusText) {
     showSubtitle(`[${txt}]`);
 }
 
+function showMicrophoneError(errorType) {
+    // Set error flag to prevent further initialization
+    microphoneErrorOccurred = true;
+
+    // Clear canvas and show error message with big white font
+    if (!ctx) return;
+
+    // Map error types to user-friendly messages
+    const errorMessages = {
+        'no_microphone': 'No microphone detected',
+        'stereo_mix': 'Line-in input not supported',
+        'permission_denied': 'Allow microphone access to begin',
+        'media_api_unavailable': 'Browser does not support audio',
+        'microphone_in_use': 'Microphone is in use',
+        'no_audio_input': 'No audio input device found'
+    };
+
+    const message = errorMessages[errorType] || 'Microphone error';
+
+    // Clear the canvas
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, w, h);
+
+    // Set up text styling for big white font
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 48px Inter, system-ui, -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Draw the error message in the center
+    ctx.fillText(message, w / 2, h / 2);
+
+    // Add smaller instruction text based on error type
+    ctx.font = '24px Inter, system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+
+    if (errorType === 'permission_denied') {
+        ctx.fillText('Click the address bar and grant microphone permission', w / 2, h / 2 + 60);
+        ctx.fillText('Then refresh the page', w / 2, h / 2 + 90);
+    } else if (errorType === 'stereo_mix') {
+        ctx.fillText('Please select a real microphone device', w / 2, h / 2 + 60);
+        ctx.fillText('Stereo Mix and Line-In are not supported', w / 2, h / 2 + 90);
+    } else if (errorType === 'no_audio_input' || errorType === 'no_microphone') {
+        ctx.fillText('Please connect a microphone and refresh the page', w / 2, h / 2 + 60);
+    } else if (errorType === 'microphone_in_use') {
+        ctx.fillText('Close other applications using the microphone', w / 2, h / 2 + 60);
+        ctx.fillText('Then refresh the page', w / 2, h / 2 + 90);
+    }
+
+    // Stop any further initialization
+    return false;
+}
+
 
 function calculateSpeechEnergy(frequencyData) {
     let speechSum = 0;
@@ -796,6 +946,9 @@ function detectSpeechActivity() {
 
         if (speechSamplesAboveThreshold >= MIN_SPEECH_SAMPLES && !isSpeaking) {
             isSpeaking = true;
+            if (connected && !agentTalking) {
+                updateSpeakingState(2);  // User is talking
+            }
         }
 
         lastSpeechTimestamp = now;
@@ -805,6 +958,9 @@ function detectSpeechActivity() {
         if (!silenceTimer && silenceDuration > 300) {
             silenceTimer = setTimeout(() => {
                 isSpeaking = false;
+                if (connected && !agentTalking) {
+                    updateSpeakingState(0);  // Back to idle
+                }
                 speechSamplesAboveThreshold = 0;
                 silenceTimer = null;
             }, END_SENTENCE_PAUSE);
@@ -907,16 +1063,22 @@ function handleConversationError(error) {
         showSubtitle(`[${error.reason}]`);
     }
     connected = false;
+    updateSpeakingState(-1);
 }
 
 function sendDriftReminderIfNeeded() {
+    // Only send drift reminders if CONTEXT_BEHAVIOUR is 1 or 2
+    if (CONTEXT_BEHAVIOUR === 0) {
+        return;
+    }
+
     const elapsedTime = Date.now() - conversationStartTime;
     if (
         driftReminder &&
         aiResponseCount % DRIFT_REMINDER_INTERVAL === 0 &&
         elapsedTime >= DRIFT_REMINDER_DELAY
     ) {
-        conversation.sendUserMessage(`<system-reminder>${driftReminder}</system-reminder>`);
+        sendContextualMessage(`<system-reminder>${driftReminder}</system-reminder>`);
         window.debugLog(`DRIFT: Sent reminder (response #${aiResponseCount})`, 'system');
     }
 }
@@ -937,6 +1099,10 @@ function processXmlTags(messageObj) {
         if (!tag || !tag.tag) continue;
         switch (tag.tag) {
             case "silence":
+                if (speakingState === 1) {
+                    window.debugLog('CONTEXT: silence tag received but agent is still talking', 'system');
+                    return;
+                }
                 window.debugLog(`CONTEXT: silence tag received - muting audio for 750ms`, 'system');
                 const currentValue = masterGainNode.gain.value;
                 masterGainNode.gain.value = 0;
@@ -962,22 +1128,22 @@ function processXmlTags(messageObj) {
             case "entity":
                 if (tag.attr && tag.attr.type && tag.attr.value) {
                     const contextMsg = `<system-reminder>Use this ${tag.attr.type} for next question: ${tag.attr.value}</system-reminder>`;
-                    conversation.sendUserMessage(contextMsg);
+                    sendContextualMessage(contextMsg);
                     window.debugLog(`CONTEXT: ${tag.attr.type} entity noted - ${tag.attr.value}`, 'system');
                 }
                 break;
             case "eval":
-                conversation.sendUserMessage(tag.attr.prompt);
+                sendContextualMessage(tag.attr.prompt);
                 break;
             case "respond":
-                conversation.sendUserMessage(
+                sendContextualMessage(
                     "Respond to this instruction by using following context. \n\n Instruction: " +
                     tag.attr.prompt +
                     ". \n\n Context: " + messageObj.message
                 );
                 break;
             case "instruct":
-                conversation.sendContextualUpdate(tag.attr.prompt);
+                sendContextualMessage(tag.attr.prompt);
                 break;
             case "notify":
                 showNotification(tag.attr.title, tag.attr.message);
@@ -998,11 +1164,26 @@ function handleAiMessage(m) {
 
     aiResponseCount++;
 
+    // Log transcript to server
+    const cleanMessage = stripXmlTags(m.message);
+    if (cleanMessage && cleanMessage.trim() && controlSocket && controlSocketReady) {
+        try {
+            controlSocket.send(JSON.stringify({
+                type: 'transcript',
+                role: 'agent',
+                message: cleanMessage,
+                timestamp: Date.now()
+            }));
+        } catch (e) {
+            console.error('Failed to send transcript:', e);
+        }
+    }
+
     if (waitingForToolResponse === true) {
         waitingForToolResponse = false;
         const cleanResponse = stripXmlTags(m.message);
-        const contextMsg = `<system-reminder>You just responded to tool call with this answer: ${cleanResponse}. Raw data was: ${rawData} Use this information to respond next question</system-reminder>`;
-        conversation.sendUserMessage(contextMsg);
+        const contextMsg = `<system-reminder>You just responded to tool call with this answer: ${cleanResponse}. Raw data was: ${rawData} Use this information to respond next question. respond with "</silence>" if ackowledged.</system-reminder>`;
+        sendContextualMessage(contextMsg);
         window.debugLog(`CONTEXT: Tool response captured for followup context`, 'system');
     }
 
@@ -1015,6 +1196,21 @@ function handleAiMessage(m) {
 }
 
 function handleUserMessage(m) {
+
+    // Log transcript to server
+    const cleanMessage = stripXmlTags(m.message);
+    if (cleanMessage && cleanMessage.trim() && cleanMessage !== "..." && controlSocket && controlSocketReady) {
+        try {
+            controlSocket.send(JSON.stringify({
+                type: 'transcript',
+                role: 'user',
+                message: cleanMessage,
+                timestamp: Date.now()
+            }));
+        } catch (e) {
+            console.error('Failed to send transcript:', e);
+        }
+    }
 
     if (window.imageGallery && m.message !== "...") {
         window.imageGallery.fadeOutSequentially();
@@ -1050,7 +1246,7 @@ async function handleToolCall(cmd, param, text = "") {
 
 
     const contextMsg = `<system-reminder>Tool calling: ${cmd} with param: ${param || 'none'}</system-reminder>`;
-    await conversation.sendUserMessage(contextMsg);
+    sendContextualMessage(contextMsg);
     window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
     window.debugLog(`TOOL: ${cmd} (${param || 'no param'})`, 'system');
     try {
@@ -1099,7 +1295,7 @@ async function handleToolCall(cmd, param, text = "") {
                 data = response.text;
 
                 window.debugLog(`Final tool step: ${cmd}`, 'system');
-                await conversation.sendUserMessage(data);
+                sendContextualMessage(data);
                 waitingForToolResponse = true;
                 rawData = data;
 
@@ -1131,7 +1327,7 @@ async function handleToolCall(cmd, param, text = "") {
 
                 data = response.text;
                 window.debugLog(`Final tool step: ${cmd}`, 'system');
-                await conversation.sendUserMessage('<system-reminder>' + data + "</system-reminder>");
+                sendContextualMessage('<system-reminder>' + data + "</system-reminder>");
                 waitingForToolResponse = true;
                 rawData = data;
 
@@ -1156,11 +1352,11 @@ async function handleToolCall(cmd, param, text = "") {
 
                     const authorData = authorResponse.text;
                     window.debugLog(`TOOL: author completed successfully`, 'system');
-                    await conversation.sendUserMessage(authorData);
+                    sendContextualMessage(authorData);
                     waitingForToolResponse = true;
                 } catch (error) {
                     window.debugLog(`TOOL: author error - ${error.message}`, 'system');
-                    await conversation.sendUserMessage("Content generation error: " + error.message);
+                    sendContextualMessage("Content generation error: " + error.message);
                 }
                 break;
 
@@ -1170,11 +1366,11 @@ async function handleToolCall(cmd, param, text = "") {
                     const result = evaluate(param);
                     const resultStr = String(result);
                     window.debugLog(`TOOL: calculator result - ${resultStr}`, 'system');
-                    await conversation.sendUserMessage(resultStr);
+                    sendContextualMessage(resultStr);
                     window.debugLog(`TOOL: calculator completed successfully`, 'system');
                 } catch (error) {
                     window.debugLog(`TOOL: calculator error - ${error.message}`, 'system');
-                    await conversation.sendUserMessage("Calculation error: " + error.message);
+                    sendContextualMessage("Calculation error: " + error.message);
                 }
                 break;
 
@@ -1238,7 +1434,7 @@ async function handleToolCall(cmd, param, text = "") {
                 window.debugLog(`TOOL: save-name - Saving name "${param}" to localStorage`, 'system');
                 localStorage.setItem('userName', param);
                 window.debugLog(`TOOL: save-name completed`, 'system');
-                conversation.sendUserMessage("<system-reminder>User change his name to: " + param + " call him by this name from now on</system-reminder>");
+                sendContextualMessage("<system-reminder>User change his name to: " + param + " call him by this name from now on</system-reminder>");
                 showNotification("User name changed", "Name changed to " + param);
                 break;
             case 'tune-behaviour':
@@ -1267,7 +1463,7 @@ async function handleToolCall(cmd, param, text = "") {
 
                     showNotification("Behaviour Updated", "Your preference has been recorded");
                     _action.play();
-                    conversation.sendContextualUpdate("User's behaviour tuning request has been recorded successfully.");
+                    sendContextualMessage("User's behaviour tuning request has been recorded successfully.");
 
                 } catch (error) {
                     window.debugLog(`TOOL: tune-behaviour error - ${error.message}`, 'system');
@@ -1280,7 +1476,7 @@ async function handleToolCall(cmd, param, text = "") {
                     if (result.success) {
                         _action.play();
                         window.debugLog(`TOOL: pick-card completed - ${result.comment}`, 'system');
-                        conversation.sendContextualUpdate(`Image selected. Respond with: "${result.comment}"`);
+                        sendContextualMessage(`Image selected. Respond with: "${result.comment}"`);
                     } else {
                         window.debugLog(`TOOL: pick-card failed - No images available`, 'system');
                     }
@@ -1342,7 +1538,7 @@ async function handleToolCall(cmd, param, text = "") {
                             _action.play();
                             window.debugLog(`TOOL: next-card (as pick-card) completed - ${result.comment}`, 'system');
 
-                            conversation.sendContextualUpdate(`Image selected. Respond with: "${result.comment}"`);
+                            sendContextualMessage(`Image selected. Respond with: "${result.comment}"`);
                         }
                     }
                 } else if (isModalOpen && window.imageGallery && window.imageGallery.showNextImage) {
@@ -1409,7 +1605,7 @@ async function handleToolCall(cmd, param, text = "") {
                     _action.play();
 
                     const contextMsg = `User searched for ${appName} app on ${platform} store`;
-                    conversation.sendContextualUpdate(contextMsg);
+                    sendContextualMessage(contextMsg);
                     window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
 
                     window.debugLog(`TOOL: app-search completed`, 'system');
@@ -1477,7 +1673,7 @@ function handleTopic(topic) {
         localStorage.setItem('lastTopic', JSON.stringify(topicData));
 
         const contextMsg = `<system-reminder>The topic is now: ${topic.title}</system-reminder>`;
-        conversation.sendUserMessage(contextMsg);
+        sendContextualMessage(contextMsg);
         window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
 
         if (window.imageGallery) {
@@ -1498,7 +1694,7 @@ function handleCodeExecution(tag) {
 
     if (!code || code.trim().length === 0) {
         window.debugLog('CODE: No code provided', 'system');
-        conversation.sendUserMessage('<system-reminder>Code execution failed: No code provided</system-reminder>');
+        sendContextualMessage('<system-reminder>Code execution failed: No code provided</system-reminder>');
         return;
     }
 
@@ -1598,18 +1794,18 @@ function handleCodeExecution(tag) {
             }
 
             window.debugLog(`CODE: Execution successful`, 'system');
-            conversation.sendUserMessage(`<system-reminder>here is the result of code tool:\n${resultStr}</system-reminder>`);
+            sendContextualMessage(`<system-reminder>here is the result of code tool:\n${resultStr}</system-reminder>`);
         } else {
             error = executionResult.error;
             const errorMsg = `Code execution error: ${error}`;
             window.debugLog(`CODE: Execution failed - ${error}`, 'system');
-            conversation.sendUserMessage(`<system-reminder>here is the result of code tool: Error - ${error}</system-reminder>`);
+            sendContextualMessage(`<system-reminder>here is the result of code tool: Error - ${error}</system-reminder>`);
         }
     } catch (e) {
         error = e.message;
         const errorMsg = `Code execution error: ${error}`;
         window.debugLog(`CODE: Execution failed - ${error}`, 'system');
-        conversation.sendUserMessage(`<system-reminder>here is the result of code tool: Error - ${error}</system-reminder>`);
+        sendContextualMessage(`<system-reminder>here is the result of code tool: Error - ${error}</system-reminder>`);
     }
 }
 
@@ -1664,6 +1860,7 @@ async function hiss(cat = "tool_call") {
 async function startConversation() {
     try {
         const tools = await initializeTools();
+        // Keep minimal WebSocket connection for potential future features (not for API calls)
         if (tools && tools.controlWsUrl) {
             try { connectControlSocket(tools.controlWsUrl); } catch (_) { }
         }
@@ -1689,10 +1886,25 @@ async function startConversation() {
             },
             onConnect: () => {
                 connected = true;
+                updateSpeakingState(0);  // Set to idle when connected
                 conversationStartTime = Date.now();
                 _join.play();
                 hideDisconnectionBox();
                 loaderStatus('connected');
+
+                // Log session start
+                if (controlSocket && controlSocketReady) {
+                    try {
+                        controlSocket.send(JSON.stringify({
+                            type: 'transcript',
+                            role: 'system',
+                            message: 'SESSION_START',
+                            timestamp: conversationStartTime
+                        }));
+                    } catch (e) {
+                        console.error('Failed to send session start:', e);
+                    }
+                }
 
                 const callControls = document.getElementById('callControls');
                 if (callControls) {
@@ -1736,7 +1948,7 @@ async function startConversation() {
                                             address !== 'null' &&
                                             address !== 'undefined') {
                                             const contextMsg = `<system-reminder>User's home address is set to: ${address}.</system-reminder>`;
-                                            conversation.sendUserMessage(contextMsg);
+                                            sendContextualMessage(contextMsg);
                                         }
                                     }
                                 } catch (error) {
@@ -1749,11 +1961,29 @@ async function startConversation() {
             onDisconnect: () => {
                 agentTalking = false;
                 connected = false;
+                updateSpeakingState(-1);
                 flush();
                 // Fade out any existing subtitle before disconnection UI
                 fadeOutSubtitle(700);
                 loaderStatus('disconnected');
                 _leave.play();
+
+                // Log session end with duration
+                const sessionEndTime = Date.now();
+                const sessionDuration = sessionEndTime - conversationStartTime;
+                if (controlSocket && controlSocketReady) {
+                    try {
+                        controlSocket.send(JSON.stringify({
+                            type: 'transcript',
+                            role: 'system',
+                            message: 'SESSION_END',
+                            timestamp: sessionEndTime,
+                            duration: sessionDuration
+                        }));
+                    } catch (e) {
+                        console.error('Failed to send session end:', e);
+                    }
+                }
 
                 stopCoordinateMonitoring();
 
@@ -1804,9 +2034,11 @@ async function startConversation() {
             onModeChange: (m) => {
                 if (m.mode === "speaking") {
                     agentTalking = true;
+                    updateSpeakingState(1);  // Agent is talking
                     cancelSubtitleAutoFade();
                 } else {
                     agentTalking = false;
+                    updateSpeakingState(isSpeaking ? 2 : 0);  // User speaking or idle
                     // When agent stops speaking, fade out current subtitle after 1500ms
                     scheduleSubtitleFadeAfter(1500);
                 }
@@ -1915,7 +2147,7 @@ async function startConversation() {
         window.onblur = function () {
             if (connected) {
                 const contextMsg = "User navigated to another page. Consider it for next response, but don't react to this contextual update.";
-                conversation.sendContextualUpdate(contextMsg);
+                sendContextualMessage(contextMsg);
                 window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
             }
         };
@@ -1923,13 +2155,14 @@ async function startConversation() {
         window.onfocus = function () {
             if (connected) {
                 const contextMsg = "User returned to the page.";
-                conversation.sendContextualUpdate(contextMsg);
+                sendContextualMessage(contextMsg);
                 window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
             }
         };
 
     } catch (error) {
         connected = false;
+        updateSpeakingState(-1);
 
 
 
@@ -1963,6 +2196,9 @@ async function createReverb(duration = 2.0, decay = 2.0, reverse = false) {
     return impulse;
 }
 function initializeAudio(stream) {
+    // Don't initialize if there's a microphone error
+    if (microphoneErrorOccurred) return;
+
     window.persistAudioStream = stream;
 
     loaderStatus('initializing audio context');
@@ -2127,10 +2363,16 @@ function drawSpectrum() {
 
 function render() {
     if (!ctx) return;
+
+    // Don't render if there's a microphone error
+    if (microphoneErrorOccurred) return;
+
     clear();
     drawSpectrum();
     // Also update subtitle canvas animations smoothly
     redrawSubtitle();
+    // Update speaking time for external access
+    window.speakingTime = getSpeakingTime();
     requestAnimationFrame(render);
 }
 
@@ -2141,7 +2383,9 @@ window.hiss = hiss;
 window.reconnectAgent = reconnectAgent;
 window.userRequestedDisconnect = false;
 
+// Deprecated - WebSocket is no longer used for API calls
 window.sendControlMessage = function (payload) {
+    console.warn('sendControlMessage is deprecated - use direct HTTP API calls instead');
     if (!controlSocket || !controlSocketReady) return false;
     try { controlSocket.send(JSON.stringify(payload)); return true; } catch (_) { return false; }
 };
@@ -2232,7 +2476,9 @@ window.postLangSel = async function () {
     };
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         connected = false;
+        updateSpeakingState(-1);
         loaderStatus('media api unavailable');
+        showMicrophoneError('media_api_unavailable');
         _err.play();
         return;
     }
@@ -2245,7 +2491,9 @@ window.postLangSel = async function () {
             const audioInputs = devices.filter(d => d.kind === 'audioinput');
             if (!audioInputs || audioInputs.length === 0) {
                 connected = false;
+                updateSpeakingState(-1);
                 loaderStatus('no input audio source detected');
+                showMicrophoneError('no_audio_input');
                 hideLoaderOverlay();
                 _err.play();
                 return;
@@ -2254,7 +2502,9 @@ window.postLangSel = async function () {
             micName = (activeMic ? activeMic.label : "Unknown").toString();
             if (micName !== "" && isStereoMix(micName) === true) {
                 connected = false;
+                updateSpeakingState(-1);
                 loaderStatus('no microphone detected');
+                showMicrophoneError('stereo_mix');
                 _err.play();
                 hideLoaderOverlay();
                 return;
@@ -2264,18 +2514,32 @@ window.postLangSel = async function () {
         });
     }).catch(function (e) {
         connected = false;
+        updateSpeakingState(-1);
         let msg = "[cannot access microphone]";
+        let errorType = 'no_microphone';  // default error type
+
         if (e && (e.name || e.code)) {
             const name = e.name || e.code;
-            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') msg = "[microphone permission denied]";
-            else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') msg = "[no input audio source detected]";
-            else if (name === 'NotReadableError') msg = "[microphone is in use or unavailable]";
+            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+                msg = "[microphone permission denied]";
+                errorType = 'permission_denied';
+            }
+            else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+                msg = "[no input audio source detected]";
+                errorType = 'no_audio_input';
+            }
+            else if (name === 'NotReadableError') {
+                msg = "[microphone is in use or unavailable]";
+                errorType = 'microphone_in_use';
+            }
             else if (name === 'OverconstrainedError') msg = "[audio constraints not satisfied]";
             else if (name === 'AbortError') msg = "[audio capture aborted]";
             else if (name === 'SecurityError') msg = "[secure context required for microphone]";
             else if (name === 'TypeError') msg = "[invalid audio constraints]";
         }
+
         showSubtitle(msg);
+        showMicrophoneError(errorType);  // Show the big error message
         hideLoaderOverlay();
         _err.play();
     });

@@ -35,7 +35,13 @@ const lname = JSON.parse(fs.readFileSync('./db/lang.json', 'utf8'));
 
 var sessions = {};
 
-// Transcript management - removed as transcripts now save to user/[sid]/
+// Transcript management
+const TRANSCRIPT_DIR = './transcripts';
+
+// Ensure transcript directory exists
+if (!fs.existsSync(TRANSCRIPT_DIR)) {
+    fs.mkdirSync(TRANSCRIPT_DIR, { recursive: true });
+}
 
 // Format duration for human readability
 function formatDuration(ms) {
@@ -54,18 +60,13 @@ function formatDuration(ms) {
 
 // Get today's transcript filename
 function getTranscriptFilename(sid) {
+    const session = sessions["_" + sid];
+    const userId = session?.userId || sid;
     const date = new Date();
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2); // Get last 2 digits of year
-    const userDirPath = path.join(__dirname, 'user', sid);
-
-    // Ensure user directory exists
-    if (!fs.existsSync(userDirPath)) {
-        fs.mkdirSync(userDirPath, { recursive: true });
-    }
-
-    return path.join(userDirPath, `${day}_${month}_${year}.md`);
+    const year = date.getFullYear();
+    return path.join(TRANSCRIPT_DIR, `${userId}_${day}_${month}_${year}.md`);
 }
 
 // Handle transcript messages
