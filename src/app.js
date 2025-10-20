@@ -18,7 +18,7 @@ const DRIFT_REMINDER_DELAY = 15000;
 // 0 = No contextual updates at all
 // 1 = Use conversation.sendContextualUpdate()
 // 2 = Use conversation.sendUserMessage() for cross-model compatibility
-const CONTEXT_BEHAVIOUR = 0;
+const CONTEXT_BEHAVIOUR = 2;
 
 const config = {
     circleRadius: 80,
