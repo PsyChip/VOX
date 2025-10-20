@@ -131,8 +131,6 @@ window.speakingTime = speakingTime;
 window.getSpeakingTime = getSpeakingTime;  // Export function for external access
 window.getStateDebugInfo = getStateDebugInfo;  // Export debug info function
 
-let waitingForToolResponse = false;
-let rawData = "";
 let isToolLoading = false;
 let userInitialized = false;
 let microphoneErrorOccurred = false;  // Flag to stop initialization on mic error
@@ -303,10 +301,16 @@ async function httpApiRequest(method, url, jsonBody) {
 const wsApiRequest = httpApiRequest;
 function connectControlSocket(customUrl) {
     try {
-        const url = customUrl || (() => {
-            const proto = (location.protocol === 'https:') ? 'wss' : 'ws';
-            return `${proto}://${location.host}/ws`;
-        })();
+        // Build URL and force WS scheme to match page scheme (https -> wss, http -> ws)
+        const pageWsProto = (location.protocol === 'https:') ? 'wss' : 'ws';
+        let url = customUrl || `${pageWsProto}://${location.host}/ws`;
+        try {
+            const u = new URL(url, window.location.href);
+            url = `${pageWsProto}://${u.host}${u.pathname}${u.search}`;
+        } catch (_) {
+            // Fallback: simple prefix replace
+            url = url.replace(/^ws(s)?:\/\//, `${pageWsProto}://`);
+        }
         const ws = new WebSocket(url);
         controlSocket = ws;
         controlSocketReady = false;
@@ -1179,16 +1183,7 @@ function handleAiMessage(m) {
         }
     }
 
-    if (waitingForToolResponse === true) {
-        waitingForToolResponse = false;
-        const cleanResponse = stripXmlTags(m.message);
-        const contextMsg = `<system-reminder>You just responded to tool call with this answer: ${cleanResponse}. Raw data was: ${rawData} Use this information to respond next question. respond with "</silence>" if ackowledged.</system-reminder>`;
-        sendContextualMessage(contextMsg);
-        window.debugLog(`CONTEXT: Tool response captured for followup context`, 'system');
-    }
-
     sendDriftReminderIfNeeded();
-
     processXmlTags(m);
     if (m.message && m.message.trim().length > 0) {
         showSubtitle(m.message);
@@ -1296,8 +1291,6 @@ async function handleToolCall(cmd, param, text = "") {
 
                 window.debugLog(`Final tool step: ${cmd}`, 'system');
                 sendContextualMessage(data);
-                waitingForToolResponse = true;
-                rawData = data;
 
                 window.debugLog(`TOOL: ${cmd} completed successfully`, 'system');
                 isToolLoading = false;
@@ -1328,8 +1321,6 @@ async function handleToolCall(cmd, param, text = "") {
                 data = response.text;
                 window.debugLog(`Final tool step: ${cmd}`, 'system');
                 sendContextualMessage('<system-reminder>' + data + "</system-reminder>");
-                waitingForToolResponse = true;
-                rawData = data;
 
                 window.debugLog(`TOOL: ${cmd} completed successfully`, 'system');
                 isToolLoading = false;
@@ -1353,7 +1344,6 @@ async function handleToolCall(cmd, param, text = "") {
                     const authorData = authorResponse.text;
                     window.debugLog(`TOOL: author completed successfully`, 'system');
                     sendContextualMessage(authorData);
-                    waitingForToolResponse = true;
                 } catch (error) {
                     window.debugLog(`TOOL: author error - ${error.message}`, 'system');
                     sendContextualMessage("Content generation error: " + error.message);
