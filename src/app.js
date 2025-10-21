@@ -40,6 +40,7 @@ let speechEnergy = 0;
 let silenceTimer = null;
 let speechSamplesAboveThreshold = 0;
 let lastSpeechTimestamp = 0;
+let isHissPlaying = false;
 window.lowEnd = false;
 
 // Global speaking state indicator
@@ -1099,6 +1100,7 @@ function processXmlTags(messageObj) {
     }
 
     const tags = Array.isArray(data) ? data : [data];
+    console.log(tags);
     for (const tag of tags) {
         if (!tag || !tag.tag) continue;
         switch (tag.tag) {
@@ -1239,10 +1241,6 @@ async function handleToolCall(cmd, param, text = "") {
         showSubtitle("[working]");
     }
 
-
-    const contextMsg = `<system-reminder>Tool calling: ${cmd} with param: ${param || 'none'}</system-reminder>`;
-    sendContextualMessage(contextMsg);
-    window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
     window.debugLog(`TOOL: ${cmd} (${param || 'no param'})`, 'system');
     try {
         let endpoint = '';

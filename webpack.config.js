@@ -40,13 +40,13 @@ module.exports = {
             new TerserPlugin({
                 terserOptions: {
                     compress: {
-                        drop_console: true, // Remove console.logs
-                        drop_debugger: true,
-                        pure_funcs: ['console.log', 'console.info'] // Remove specific console methods
+                        // Keep console statements for debugging/observability
+                        drop_console: false,
+                        drop_debugger: false
                     },
                     mangle: true,
-                    output: {
-                        comments: false // Remove comments
+                    format: {
+                        comments: false
                     }
                 },
                 extractComments: false

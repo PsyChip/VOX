@@ -518,7 +518,7 @@ String.prototype.render = function (v, prefix) {
 function geoip(ip) {
     if (ip === "::1" || ip === "127.0.0.1" || ip === "::ffff:127.0.0.1") {
         console.log("Localhost IP detected, returning sample ip");
-        ip = "217.9.109.94";
+        ip = "92.44.26.128";
     }
 
     var geo;
@@ -1083,26 +1083,26 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
         if (req.query.mode === 'chat') {
             return sendMaybeCompressedJSON(req, res, payload);
         }
-        return res.status(500).json({ error: 'Failed to get signed URL', details: error.message });
+        return sendMaybeCompressedJSON(req, res, { error: 'Failed to get signed URL', details: error.message }, 500);
     }
 });
 
 app.post("/api/user-init", (req, res) => {
     const sid = req.cookies.sid;
     if (!sid || !sessions["_" + sid]) {
-        return res.status(403).json({ error: "Invalid or missing session ID" });
+        return sendMaybeCompressedJSON(req, res, { error: "Invalid or missing session ID" }, 403);
     }
 
     // Initialize user directory on first user message
     if (sessions["_" + sid].systemPrompt) {
         const initialized = initializeUserDirectory(sid, sessions["_" + sid].systemPrompt);
         if (initialized) {
-            return res.json({ success: true, message: "User directory initialized" });
+            return sendMaybeCompressedJSON(req, res, { success: true, message: "User directory initialized" });
         } else {
-            return res.json({ success: false, message: "Directory already exists or initialization failed" });
+            return sendMaybeCompressedJSON(req, res, { success: false, message: "Directory already exists or initialization failed" });
         }
     } else {
-        return res.status(400).json({ error: "System prompt not available in session" });
+        return sendMaybeCompressedJSON(req, res, { error: "System prompt not available in session" }, 400);
     }
 });
 
@@ -1110,7 +1110,7 @@ app.get("/api/sentence/:event", (req, res) => {
 
     const sid = req.cookies.sid;
     if (!sid || !sessions["_" + sid]) {
-        return res.status(403).json({ error: "Invalid or missing session ID" });
+        return sendMaybeCompressedJSON(req, res, { error: "Invalid or missing session ID" }, 403);
     }
 
     // Extend cookie expiration by 1 year on every visit
@@ -1141,7 +1141,7 @@ app.get("/api/sentence/:event", (req, res) => {
         }
     }
 
-    return res.status(404).json({ error: "unknown event" });
+    return sendMaybeCompressedJSON(req, res, { error: "unknown event" }, 404);
 });
 
 function formatToolResponse(cmd, param, result) {
@@ -1263,7 +1263,7 @@ app.get("/api/tool/web-search/:query", async (req, res) => {
 app.get("/api/tool/visible-aircraft/:location", async (req, res) => {
     const sid = req.cookies.sid;
     if (!sid || !sessions["_" + sid]) {
-        return res.status(403).json({ error: "Invalid or missing session ID" });
+        return sendMaybeCompressedJSON(req, res, { error: "Invalid or missing session ID" }, 403);
     }
 
     // Extend cookie expiration by 1 year on every visit
@@ -1356,7 +1356,7 @@ app.get("/api/tool/latest-news/:location?", async (req, res) => {
     const country = geo.flag.toLowerCase();
 
     if (!apiKey) {
-        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+        return sendMaybeCompressedJSON(req, res, { error: "SERPAPI_KEY is not configured" }, 500);
     }
 
     try {
@@ -1453,7 +1453,7 @@ app.get("/api/tool/local-events/:city?", async (req, res) => {
         return res.send(formatToolResponse("local-events", city, topEvents));
     } catch (error) {
 
-        return res.status(502).json({ error: "Failed to fetch events" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to fetch events" }, 502);
     }
 });
 
@@ -1504,11 +1504,11 @@ app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
     const apiKey = process.env.GPLACES_KEY;
 
     if (!coordinates) {
-        return res.status(400).json({ error: "Coordinates parameter is required" });
+        return sendMaybeCompressedJSON(req, res, { error: "Coordinates parameter is required" }, 400);
     }
 
     if (!query) {
-        return res.status(400).json({ error: "Query parameter is required" });
+        return sendMaybeCompressedJSON(req, res, { error: "Query parameter is required" }, 400);
     }
 
     try {
@@ -1539,7 +1539,7 @@ app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
                 lon = geo.lon;
 
             } else {
-                return res.status(400).json({ error: "Unable to determine location from IP or coordinates" });
+                return sendMaybeCompressedJSON(req, res, { error: "Unable to determine location from IP or coordinates" }, 400);
             }
         }
 
@@ -1620,7 +1620,7 @@ app.get("/api/tool/poi-search/:coordinates/:query", async (req, res) => {
         return res.send(formatToolResponse("poi-search", query, results));
     } catch (error) {
         console.error("POI search error:", error);
-        return res.status(502).json({ error: "Failed to fetch POI results" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to fetch POI results" }, 502);
     }
 });
 
@@ -1629,11 +1629,11 @@ app.get("/api/tool/get-address/:coordinates", async (req, res) => {
     const apiKey = process.env.GPLACES_KEY;
 
     if (!apiKey) {
-        return res.status(500).json({ error: "GPLACES_KEY is not configured" });
+        return sendMaybeCompressedJSON(req, res, { error: "GPLACES_KEY is not configured" }, 500);
     }
 
     if (!coordinates) {
-        return res.status(400).json({ error: "Coordinates parameter is required" });
+        return sendMaybeCompressedJSON(req, res, { error: "Coordinates parameter is required" }, 400);
     }
 
     try {
@@ -1641,12 +1641,12 @@ app.get("/api/tool/get-address/:coordinates", async (req, res) => {
         const [lat, lon] = coordinates.split(',').map(c => parseFloat(c.trim()));
 
         if (isNaN(lat) || isNaN(lon)) {
-            return res.status(400).json({ error: "Invalid coordinates format. Expected: lat,lon" });
+            return sendMaybeCompressedJSON(req, res, { error: "Invalid coordinates format. Expected: lat,lon" }, 400);
         }
 
         // Check for 0.00,0.00 coordinates (unable to determine location)
         if (lat === 0 && lon === 0) {
-            return res.status(400).json({ error: "unable to determine your coordinates" });
+            return sendMaybeCompressedJSON(req, res, { error: "unable to determine your coordinates" }, 400);
         }
 
 
@@ -1654,7 +1654,7 @@ app.get("/api/tool/get-address/:coordinates", async (req, res) => {
         const address = await reverseGeocode(lat, lon, apiKey);
 
         if (!address) {
-            return res.status(404).json({ error: "Could not find address for the given coordinates" });
+            return sendMaybeCompressedJSON(req, res, { error: "Could not find address for the given coordinates" }, 404);
         }
         console.log(address);
         const result = {
@@ -1666,7 +1666,7 @@ app.get("/api/tool/get-address/:coordinates", async (req, res) => {
         return res.send(formatToolResponse("get-address", coordinates, result));
     } catch (error) {
         console.error("Get address error:", error);
-        return res.status(502).json({ error: "Failed to fetch address data" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to fetch address data" }, 502);
     }
 });
 
@@ -1675,7 +1675,7 @@ app.get("/api/tool/latest-earthquakes/:coordinates?", async (req, res) => {
 
     const sid = req.cookies.sid;
     if (!sid || !sessions["_" + sid]) {
-        return res.status(403).json({ error: "Invalid or missing session ID" });
+        return sendMaybeCompressedJSON(req, res, { error: "Invalid or missing session ID" }, 403);
     }
 
     // Extend cookie expiration by 1 year on every visit
@@ -1742,7 +1742,7 @@ app.get("/api/tool/latest-earthquakes/:coordinates?", async (req, res) => {
         return res.send(formatToolResponse("latest-earthquakes", `${lat},${lon}`, results));
     } catch (error) {
         console.error("Earthquake API error:", error);
-        return res.status(502).json({ error: "Failed to fetch earthquake data" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to fetch earthquake data" }, 502);
     }
 });
 
@@ -1751,16 +1751,16 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
     const apiKey = process.env.SERPAPI_KEY;
 
     if (!apiKey) {
-        return res.status(500).json({ error: "SERPAPI_KEY is not configured" });
+        return sendMaybeCompressedJSON(req, res, { error: "SERPAPI_KEY is not configured" }, 500);
     }
 
     if (!param) {
-        return res.status(400).json({ error: "Parameter is required (format: origin|destination|date)" });
+        return sendMaybeCompressedJSON(req, res, { error: "Parameter is required (format: origin|destination|date)" }, 400);
     }
 
     const sid = req.cookies.sid;
     if (!sid || !sessions["_" + sid]) {
-        return res.status(403).json({ error: "Invalid or missing session ID" });
+        return sendMaybeCompressedJSON(req, res, { error: "Invalid or missing session ID" }, 403);
     }
 
     // Extend cookie expiration by 1 year on every visit
@@ -1774,7 +1774,7 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
         // Parse parameter: "origin|destination|date"
         const parts = param.split('|');
         if (parts.length !== 3) {
-            return res.status(400).json({ error: "Invalid parameter format. Expected: origin|destination|date" });
+            return sendMaybeCompressedJSON(req, res, { error: "Invalid parameter format. Expected: origin|destination|date" }, 400);
         }
 
         let [origin, destination, dateStr] = parts.map(p => p.trim());
@@ -1989,7 +1989,7 @@ app.get("/api/tool/flight-search/:param", async (req, res) => {
 
         return res.send(formatToolResponse("flight-search", param, result));
     } catch (error) {
-        return res.status(502).json({ error: "Failed to fetch flight data" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to fetch flight data" }, 502);
     }
 });
 
@@ -2029,11 +2029,11 @@ app.get("/api/tool/author/:param", async (req, res) => {
     const apiKey = process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY;
 
     if (!param) {
-        return res.status(400).json({ error: "Parameter is required" });
+        return sendMaybeCompressedJSON(req, res, { error: "Parameter is required" }, 400);
     }
 
     if (!apiKey) {
-        return res.status(500).json({ error: "ANTHROPIC_API_KEY or OPENAI_API_KEY is not configured" });
+        return sendMaybeCompressedJSON(req, res, { error: "ANTHROPIC_API_KEY or OPENAI_API_KEY is not configured" }, 500);
     }
 
     try {
@@ -2115,8 +2115,7 @@ app.get("/api/tool/author/:param", async (req, res) => {
         // Return the generated content directly (it already includes XML formatting)
         return res.send(contentResult);
     } catch (error) {
-
-        return res.status(502).json({ error: "Failed to generate content" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to generate content" }, 502);
     }
 });
 
@@ -2142,7 +2141,7 @@ app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
         const { category, user_request, user_transcript } = req.body;
 
         if (!category || !user_request || !user_transcript) {
-            return res.status(400).json({ error: "Missing required fields: category, user_request, user_transcript" });
+            return sendMaybeCompressedJSON(req, res, { error: "Missing required fields: category, user_request, user_transcript" }, 400);
         }
 
 
@@ -2180,15 +2179,14 @@ app.post("/api/tool/tune-behaviour", express.json(), (req, res) => {
 
 
 
-        return res.json({
+        return sendMaybeCompressedJSON(req, res, {
             success: true,
             message: 'Behaviour tuning request recorded',
             logged_to: requestsFile
         });
 
     } catch (error) {
-
-        return res.status(500).json({ error: "Failed to process tune-behaviour request" });
+        return sendMaybeCompressedJSON(req, res, { error: "Failed to process tune-behaviour request" }, 500);
     }
 });
 
@@ -2452,12 +2450,12 @@ app.post('/api/onmessage', express.json(), (req, res) => {
     try {
         const sid = req.cookies.sid;
         if (!sid || !sessions['_' + sid]) {
-            return res.status(403).json({ error: 'Invalid or missing session ID' });
+            return sendMaybeCompressedJSON(req, res, { error: 'Invalid or missing session ID' }, 403);
         }
 
         const body = req.body || {};
-        return res.json({ success: true });
+        return sendMaybeCompressedJSON(req, res, { success: true });
     } catch (e) {
-        return res.status(500).json({ error: 'onmessage failed' });
+        return sendMaybeCompressedJSON(req, res, { error: 'onmessage failed' }, 500);
     }
 });

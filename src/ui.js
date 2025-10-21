@@ -107,6 +107,10 @@ export function showNotification(title, description, iconUrl) {
   }, 6000);
 }
 
+// Developer rule trace overlay
+let ruleTraceContainer = null;
+export function showRuleTrace(labels) { /* removed debug overlay */ }
+
 // Link/file helpers
 export function handleLink(href, title, target) {
   const ctx = `User opened link: ${title || href}`;
