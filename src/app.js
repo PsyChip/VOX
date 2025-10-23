@@ -1,6 +1,8 @@
 "use strict";
 
 import { Conversation } from '@elevenlabs/client';
+import sound from './sound';
+import Sun from './sun';
 import { evaluate } from 'mathjs';
 import { detectPerformance, getDayPhase, getLocalTime24, tzOffset, isStereoMix, stripXmlTags, xmlToJson } from './utils';
 import { showDisconnectionBox, hideDisconnectionBox, updateTopicDisplay, clearTopicDisplay, showCategoryIndicator, handleLink, showNotification, initTouchUI } from './ui';
@@ -42,6 +44,7 @@ let speechSamplesAboveThreshold = 0;
 let lastSpeechTimestamp = 0;
 let isHissPlaying = false;
 window.lowEnd = false;
+let transcript = [];
 
 // Global speaking state indicator
 // -1: not connected, 0: idle, 1: agent talking, 2: user talking
@@ -165,6 +168,191 @@ let driftReminder = null;
 let aiResponseCount = 0;
 let conversationStartTime = 0;
 
+// Screen Wake Lock state
+let _wakeLock = null;
+let _wakeLockVisHandler = null;
+async function _acquireWakeLockIfMobile() {
+    try {
+        const nav = (typeof navigator !== 'undefined') ? navigator : null;
+        if (!nav || !('wakeLock' in nav)) return;
+        const isMobile = /android|iphone|ipad|ipod/i.test((navigator.userAgent || ''));
+        if (!isMobile) return;
+        try {
+            _wakeLock = await nav.wakeLock.request('screen');
+            try { if (window.debugLog) window.debugLog('WAKELOCK: Acquired', 'system'); } catch (_) { }
+            // Reacquire on visibilitychange (browsers may release on background)
+            _wakeLockVisHandler = async () => {
+                if (document.visibilityState === 'visible' && !_wakeLock) {
+                    try { _wakeLock = await nav.wakeLock.request('screen'); } catch (_) { }
+                }
+            };
+            try { document.addEventListener('visibilitychange', _wakeLockVisHandler); } catch (_) { }
+            try { _wakeLock.addEventListener('release', () => { try { if (window.debugLog) window.debugLog('WAKELOCK: Released', 'system'); } catch (_) { } _wakeLock = null; }); } catch (_) { }
+        } catch (_) {
+            // ignore failures
+        }
+    } catch (_) { }
+}
+async function _releaseWakeLock() {
+    try {
+        if (_wakeLock && typeof _wakeLock.release === 'function') {
+            try { await _wakeLock.release(); } catch (_) { }
+        }
+        _wakeLock = null;
+    } catch (_) { }
+    try {
+        if (_wakeLockVisHandler) {
+            document.removeEventListener('visibilitychange', _wakeLockVisHandler);
+            _wakeLockVisHandler = null;
+        }
+    } catch (_) { }
+}
+
+// Compass / Heading state
+let _magSensor = null;
+let _headingDeg = null; // 0..360
+let _headingUpdatedAt = 0;
+let _orientationPermissionRequested = false;
+let _phonePose = '';
+function _normalizeDeg(deg) {
+    if (typeof deg !== 'number' || !isFinite(deg)) return null;
+    let d = deg % 360;
+    if (d < 0) d += 360;
+    return Math.round(d * 10) / 10; // 0.1° precision
+}
+function _headingToCardinal(deg) {
+    const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    if (deg == null) return '';
+    const ix = Math.floor(((deg + 22.5) % 360) / 45);
+    return dirs[ix] || '';
+}
+async function startCompassSensors(waitForFirst = false) {
+    try {
+        // Try Generic Sensor API: Magnetometer
+        if ('Magnetometer' in window) {
+            if (_magSensor) return;
+            _magSensor = new window.Magnetometer({ frequency: 10 });
+            _magSensor.addEventListener('reading', () => {
+                try {
+                    // Compute heading from magnetic field vector
+                    const x = _magSensor.x, y = _magSensor.y;
+                    if (typeof x === 'number' && typeof y === 'number') {
+                        const rad = Math.atan2(y, x); // radians
+                        const deg = _normalizeDeg(rad * 180 / Math.PI);
+                        if (deg != null) {
+                            _headingDeg = deg;
+                            _headingUpdatedAt = Date.now();
+                        }
+                    }
+                } catch (_) { }
+            });
+            _magSensor.addEventListener('error', () => { try { _magSensor = null; } catch (_) { } });
+            try { _magSensor.start(); } catch (_) { /* ignore */ }
+        }
+        // Fallback: DeviceOrientation (iOS has webkitCompassHeading)
+        const setupDo = async () => {
+            try {
+                const handler = (e) => {
+                    try {
+                        let deg = null;
+                        if (typeof e.webkitCompassHeading === 'number') {
+                            // iOS Safari provides true heading
+                            deg = _normalizeDeg(e.webkitCompassHeading);
+                        } else if (typeof e.alpha === 'number') {
+                            // Alpha is device rotation around z-axis
+                            deg = _normalizeDeg(360 - e.alpha);
+                        }
+                        if (deg != null) {
+                            _headingDeg = deg;
+                            _headingUpdatedAt = Date.now();
+                        }
+                        // Also attempt to infer phone pose via orientation angles if motion not available
+                        try {
+                            const pose = _computePhonePoseFromAngles(e);
+                            if (pose) _phonePose = pose;
+                        } catch (_) { }
+                    } catch (_) { }
+                };
+                window.removeEventListener('deviceorientation', handler);
+                window.addEventListener('deviceorientation', handler, true);
+            } catch (_) { }
+        };
+        // iOS permission gate
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function' && !_orientationPermissionRequested) {
+            try {
+                _orientationPermissionRequested = true;
+                // Try to request on first user gesture
+                const req = async () => {
+                    try { await DeviceOrientationEvent.requestPermission().catch(() => {}); } catch (_) { }
+                    setupDo();
+                    try { window.removeEventListener('touchstart', req, { capture: true }); } catch (_) { try { window.removeEventListener('touchstart', req); } catch (_) { } }
+                    window.removeEventListener('click', req, true);
+                };
+                window.addEventListener('touchstart', req, { capture: true, passive: true });
+                window.addEventListener('click', req, true);
+            } catch (_) { }
+        } else {
+            setupDo();
+        }
+
+        if (waitForFirst) {
+            await new Promise(res => setTimeout(res, 300));
+        }
+    } catch (_) { }
+}
+function getHeadingDeg() { return _headingDeg; }
+function getHeadingCardinal() { return _headingToCardinal(_headingDeg); }
+window.getHeading = getHeadingDeg;
+window.getHeadingCardinal = getHeadingCardinal;
+
+// Phone pose detection
+function _computePhonePoseFromAngles(e) {
+    try {
+        const type = (screen && screen.orientation && screen.orientation.type) ? screen.orientation.type : '';
+        let orient = '';
+        if (type.includes('portrait')) orient = 'portrait';
+        else if (type.includes('landscape')) orient = 'landscape';
+        else if (typeof e.gamma === 'number') {
+            // heuristic: |gamma| ~ 0 portrait, ~90 landscape
+            orient = Math.abs(e.gamma) > 45 ? 'landscape' : 'portrait';
+        }
+        // Can't reliably tell face up/down from angles alone; leave to motion
+        return orient ? `${orient}` : '';
+    } catch (_) { return ''; }
+}
+function _startPhonePoseMotion() {
+    try {
+        const handler = (ev) => {
+            try {
+                const g = ev.accelerationIncludingGravity;
+                if (!g) return;
+                const az = typeof g.z === 'number' ? g.z : null; // z > 0 face-up (toward user)
+                let face = '';
+                if (az != null) {
+                    if (az >= 6) face = 'face-up';
+                    else if (az <= -6) face = 'face-down';
+                }
+                let orient = '';
+                const type = (screen && screen.orientation && screen.orientation.type) ? screen.orientation.type : '';
+                if (type.includes('portrait')) orient = 'portrait';
+                else if (type.includes('landscape')) {
+                    orient = type.includes('primary') ? 'landscape-right' : 'landscape-left';
+                } else {
+                    // Approximate using gamma if available via deviceorientation set earlier
+                    // Leave as empty if unknown
+                }
+                const parts = [orient || ''];
+                if (face) parts.push(face);
+                const pose = parts.filter(Boolean).join(' ').trim();
+                if (pose) _phonePose = pose;
+            } catch (_) { }
+        };
+        window.addEventListener('devicemotion', handler, true);
+    } catch (_) { }
+}
+_startPhonePoseMotion();
+function getPhonePose() { return _phonePose; }
+window.getPhonePose = getPhonePose;
 
 // WebSocket control channel - kept minimal for potential future features
 // No longer used for API calls - all API calls use direct HTTP
@@ -230,6 +418,7 @@ const subtitleConfig = {
 // Canvas subtitle state
 let subtitleCanvas = null;
 let subtitleCtx = null;
+let subtitleReady = false; // becomes true once subtitle canvas is initialized post-init
 let subtitleIsTyping = false;
 let subtitleIsPagePause = false;
 let subtitlePageStart = 0;
@@ -269,6 +458,50 @@ const _join = new sound("/static/sfx/VoiceJoin.ogg");
 const _err = new sound("/static/sfx/VoiceError.ogg");
 const _talk = new sound("/static/sfx/talk.ogg");
 const _action = new sound("/static/sfx/action.ogg");
+
+// Vibration helper & wrapper for sound notifications
+function vibrateNotice(kind) {
+    try {
+        const nav = (typeof navigator !== 'undefined') ? navigator : null;
+        if (!nav || typeof nav.vibrate !== 'function') return;
+        let pattern;
+        switch ((kind || '').toLowerCase()) {
+            case 'error': pattern = [120, 60, 120]; break;
+            case 'action': pattern = 40; break;
+            case 'join': pattern = [50, 40, 50]; break;
+            case 'leave': pattern = [70, 50, 70]; break;
+            case 'talk': pattern = 20; break;
+            default: pattern = 30; break;
+        }
+        nav.vibrate(pattern);
+    } catch (_) { /* ignore */ }
+}
+function attachVibrateToSound(obj, kind) {
+    try {
+        if (!obj || typeof obj.play !== 'function') return obj;
+        const original = obj.play.bind(obj);
+        obj.play = function () {
+            vibrateNotice(kind);
+            return original.apply(obj, arguments);
+        };
+    } catch (_) { /* ignore */ }
+    return obj;
+}
+
+attachVibrateToSound(_leave, 'leave');
+attachVibrateToSound(_join, 'join');
+attachVibrateToSound(_err, 'error');
+attachVibrateToSound(_talk, 'talk');
+attachVibrateToSound(_action, 'action');
+
+// Expose to window for UI modules that call notification sounds
+try {
+    window._leave = _leave;
+    window._join = _join;
+    window._err = _err;
+    window._talk = _talk;
+    window._action = _action;
+} catch (_) { }
 
 
 async function httpApiRequest(method, url, jsonBody) {
@@ -854,20 +1087,77 @@ function showSubtitle(text) {
     }
 }
 
-// Loader status helper: show a status message in subtitle area and log it
+// Loader status helper: show a status message in centered display
 function loaderStatus(statusText) {
     const txt = (statusText || '').toString().trim();
     if (!txt) return;
-    try { if (window.debugLog) window.debugLog(`LOADER: ${txt}`, 'system'); } catch (_) { }
-    showSubtitle(`[${txt}]`);
+
+    // Show in centered status display
+    const statusDisplay = document.getElementById('statusDisplay');
+    const statusTextEl = document.getElementById('statusText');
+    if (statusDisplay && statusTextEl) {
+        statusDisplay.classList.add('active');
+        statusTextEl.textContent = txt;
+    }
+}
+
+// Hide status display when agent connects
+function hideStatusDisplay() {
+    const statusDisplay = document.getElementById('statusDisplay');
+    if (statusDisplay) {
+        const statusTextEl = document.getElementById('statusText');
+        if (statusTextEl) {
+            statusTextEl.style.opacity = '0';
+        }
+        setTimeout(() => {
+            statusDisplay.classList.remove('active');
+            if (statusTextEl) {
+                statusTextEl.style.opacity = '1';
+            }
+        }, 300);
+    }
+}
+
+// Initialize subtitle canvas after successful app init/connection
+function initSubtitleCanvas() {
+    if (subtitleReady) return;
+    subtitleCanvas = document.createElement('canvas');
+    subtitleCanvas.id = 'subtitleCanvas';
+    subtitleCanvas.style.position = 'fixed';
+    subtitleCanvas.style.top = '0';
+    subtitleCanvas.style.left = '0';
+    subtitleCanvas.style.width = window.innerWidth + 'px';
+    subtitleCanvas.style.height = window.innerHeight + 'px';
+    subtitleCanvas.style.pointerEvents = 'none';
+    subtitleCanvas.style.zIndex = '1000';
+    const dpr = window.devicePixelRatio || 1;
+    subtitleCanvas.width = Math.floor(window.innerWidth * dpr);
+    subtitleCanvas.height = Math.floor(window.innerHeight * dpr);
+    document.body.appendChild(subtitleCanvas);
+    subtitleCtx = subtitleCanvas.getContext('2d');
+    if (subtitleCtx) {
+        subtitleCtx.scale(dpr, dpr);
+    }
+    subtitleReady = true;
+}
+
+// Helper to show status pre/post init in correct surface
+function showAppStatus(text) {
+    const raw = (text || '').toString();
+    if (!raw.trim()) return;
+    if (subtitleReady && subtitleCtx) {
+        // Render as non-typing status in subtitle canvas
+        const bracketed = /^\[.*\]$/.test(raw) ? raw : `[${raw}]`;
+        showSubtitle(bracketed);
+    } else {
+        // HTML status until canvas initialized
+        loaderStatus(raw.replace(/^\[|\]$/g, ''));
+    }
 }
 
 function showMicrophoneError(errorType) {
     // Set error flag to prevent further initialization
     microphoneErrorOccurred = true;
-
-    // Clear canvas and show error message with big white font
-    if (!ctx) return;
 
     // Map error types to user-friendly messages
     const errorMessages = {
@@ -881,34 +1171,20 @@ function showMicrophoneError(errorType) {
 
     const message = errorMessages[errorType] || 'Microphone error';
 
-    // Clear the canvas
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, w, h);
+    // Show error in status display (HTML-based error handling)
+    const statusDisplay = document.getElementById('statusDisplay');
+    const statusTextEl = document.getElementById('statusText');
+    if (statusDisplay && statusTextEl) {
+        statusDisplay.classList.add('active');
+        statusTextEl.textContent = message;
 
-    // Set up text styling for big white font
-    ctx.fillStyle = 'white';
-    ctx.font = 'bold 48px Inter, system-ui, -apple-system, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+        // Add detailed error message as a data attribute for debugging
+        statusDisplay.setAttribute('data-error-type', errorType);
+    }
 
-    // Draw the error message in the center
-    ctx.fillText(message, w / 2, h / 2);
-
-    // Add smaller instruction text based on error type
-    ctx.font = '24px Inter, system-ui, -apple-system, sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-
-    if (errorType === 'permission_denied') {
-        ctx.fillText('Click the address bar and grant microphone permission', w / 2, h / 2 + 60);
-        ctx.fillText('Then refresh the page', w / 2, h / 2 + 90);
-    } else if (errorType === 'stereo_mix') {
-        ctx.fillText('Please select a real microphone device', w / 2, h / 2 + 60);
-        ctx.fillText('Stereo Mix and Line-In are not supported', w / 2, h / 2 + 90);
-    } else if (errorType === 'no_audio_input' || errorType === 'no_microphone') {
-        ctx.fillText('Please connect a microphone and refresh the page', w / 2, h / 2 + 60);
-    } else if (errorType === 'microphone_in_use') {
-        ctx.fillText('Close other applications using the microphone', w / 2, h / 2 + 60);
-        ctx.fillText('Then refresh the page', w / 2, h / 2 + 90);
+    // Log error for debugging
+    if (window.debugLog) {
+        window.debugLog(`MICROPHONE ERROR: ${errorType} - ${message}`, 'system');
     }
 
     // Stop any further initialization
@@ -984,6 +1260,8 @@ async function initializeTools() {
         loaderStatus('loading tools');
         let payload = [];
         payload.push(getDayPhase());
+        // Start compass early and wait briefly for first reading
+        await startCompassSensors(true);
         const coords = await requestPreciseLocation();
         const lat = coords.latitude;
         const lng = coords.longitude;
@@ -992,7 +1270,7 @@ async function initializeTools() {
         payload.push(getLocalTime24());
         payload.push(tzOffset());
 
-        if (typeof Sun !== 'undefined') {
+        if (Sun) {
             const nextEvent = Sun.getNextEvent(lat, lng);
             payload.push(nextEvent ? nextEvent.name + ":" + nextEvent.seconds : 'unknown:0');
             payload.push((Sun.isFullMoonVisible(lat, lng)["visible"] === true ? 1 : 0) + "," + (Sun.isDangerousSun(lat, lng)["dangerous"] === true ? 1 : 0));
@@ -1019,7 +1297,6 @@ async function initializeTools() {
                 const topic = JSON.parse(lastTopicData);
                 lastTopicTitle = topic.title || '';
                 lastTopicTimestamp = topic.timestamp || 0;
-
                 if (lastTopicTitle && topic.tags) {
                     updateTopicDisplay(lastTopicTitle, topic.tags);
                 }
@@ -1033,6 +1310,141 @@ async function initializeTools() {
 
         const uid = localStorage.getItem('uid') || '0';
         payload.push(uid);
+
+        // Screen Orientation: capture current orientation and attempt to lock on mobile
+        try {
+            // Detect current orientation
+            let orientationType = '';
+            if (screen && screen.orientation && typeof screen.orientation.type === 'string') {
+                orientationType = screen.orientation.type;
+            } else if (typeof window.orientation !== 'undefined') {
+                const v = Number(window.orientation);
+                orientationType = (v === 0) ? 'portrait-primary' : (Math.abs(v) === 90 ? 'landscape-primary' : 'portrait-secondary');
+            }
+            payload.push(orientationType || '');
+
+            // Try to lock orientation on mobile devices (best-effort)
+            const isMobile = /android|iphone|ipad|ipod/i.test((navigator.userAgent || ''));
+            const tryLock = () => {
+                try {
+                    if (screen && screen.orientation && typeof screen.orientation.lock === 'function') {
+                        screen.orientation.lock('portrait-primary').catch(() => { /* ignore */ });
+                    }
+                } catch (_) { /* ignore */ }
+            };
+            if (isMobile) {
+                // Immediate attempt
+                tryLock();
+                // Also re-attempt on first user interaction (required by some browsers)
+                let once = false;
+                const onceHandler = () => {
+                    if (once) return; once = true;
+                    tryLock();
+                    try { window.removeEventListener('touchstart', onceHandler, { capture: true }); } catch (_) { try { window.removeEventListener('touchstart', onceHandler); } catch (_) {} }
+                    window.removeEventListener('click', onceHandler, true);
+                };
+                try {
+                    window.addEventListener('touchstart', onceHandler, { capture: true, passive: true });
+                    window.addEventListener('click', onceHandler, true);
+                } catch (_) { /* ignore */ }
+            }
+        } catch (_) {
+            payload.push('');
+        }
+
+        // Heading (degrees + cardinal)
+        try {
+            const hdg = getHeadingDeg();
+            const card = getHeadingCardinal();
+            payload.push(hdg != null ? String(Math.round(hdg)) : '');
+            payload.push(card || '');
+        } catch (_) {
+            payload.push('');
+            payload.push('');
+        }
+
+        // Phone pose/orientation string (e.g., 'portrait face-up')
+        try {
+            const pose = getPhonePose();
+            payload.push(pose || '');
+        } catch (_) {
+            payload.push('');
+        }
+
+        // Battery status (Battery Status API)
+        try {
+            let bm = null;
+            if (navigator && typeof navigator.getBattery === 'function') {
+                bm = await navigator.getBattery();
+            } else if ((navigator && navigator.battery)) {
+                // Older implementations
+                bm = navigator.battery;
+            }
+
+            if (bm && typeof bm.level === 'number') {
+                const levelPct = Math.round(bm.level * 100);
+                const isCharging = !!bm.charging;
+                // Send to server as two fields: battery level percent, charging flag
+                payload.push(String(levelPct));
+                payload.push(isCharging ? '1' : '0');
+
+                // Attach listeners with thresholds and rate limiting
+                try {
+                    let lastLevelSent = levelPct;
+                    let lastLevelSentAt = Date.now();
+                    let lastChargeState = isCharging;
+                    let lastChargeSentAt = Date.now();
+                    const MIN_DIFF_PCT = 1; // >=1%
+                    const MIN_INTERVAL_MS = 3000; // 3 seconds
+
+                    const sendLevelUpdate = () => {
+                        try {
+                            const now = Date.now();
+                            const pct = Math.round((bm.level || 0) * 100);
+                            const diff = Math.abs(pct - lastLevelSent);
+                            if (diff >= MIN_DIFF_PCT && (now - lastLevelSentAt) >= MIN_INTERVAL_MS) {
+                                sendContextualMessage(`user's device battery status: ${pct}%`);
+                                if (window.debugLog) window.debugLog(`BATTERY: levelchange -> ${pct}% (sent)`, 'system');
+                                lastLevelSent = pct;
+                                lastLevelSentAt = now;
+                            } else {
+                                if (window.debugLog) window.debugLog(`BATTERY: levelchange -> ${pct}% (suppressed)`, 'system');
+                            }
+                        } catch (_) { }
+                    };
+                    const sendChargeUpdate = () => {
+                        try {
+                            const now = Date.now();
+                            if ((now - lastChargeSentAt) < MIN_INTERVAL_MS && bm.charging === lastChargeState) {
+                                if (window.debugLog) window.debugLog(`BATTERY: chargingchange -> ${bm.charging ? 'charging' : 'not charging'} (suppressed)`, 'system');
+                                return;
+                            }
+                            if (bm.charging !== lastChargeState || (now - lastChargeSentAt) >= MIN_INTERVAL_MS) {
+                                const msg = bm.charging ? 'user connected to charger' : 'user disconnected from charger';
+                                sendContextualMessage(msg);
+                                if (window.debugLog) window.debugLog(`BATTERY: chargingchange -> ${bm.charging ? 'charging' : 'not charging'} (sent)`, 'system');
+                                lastChargeState = bm.charging;
+                                lastChargeSentAt = now;
+                            }
+                        } catch (_) { }
+                    };
+                    if (typeof bm.addEventListener === 'function') {
+                        try { bm.addEventListener('levelchange', sendLevelUpdate); } catch (_) { }
+                        try { bm.addEventListener('chargingchange', sendChargeUpdate); } catch (_) { }
+                    } else if (typeof bm.onlevelchange !== 'undefined') {
+                        try { bm.onlevelchange = sendLevelUpdate; } catch (_) { }
+                        try { bm.onchargingchange = sendChargeUpdate; } catch (_) { }
+                    }
+                } catch (_) { }
+            } else {
+                // No valid reading
+                payload.push('');
+                payload.push('');
+            }
+        } catch (_) {
+            payload.push('');
+            payload.push('');
+        }
 
         const payloadString = payload.join("|");
         const utf8Bytes = new TextEncoder().encode(payloadString);
@@ -1063,9 +1475,10 @@ function handleConversationError(error) {
     _err.play();
     hideDisconnectionBox();
     flush();
-    showSubtitle("[error occurred]");
+    // Show errors: canvas after init, otherwise HTML
+    try { showAppStatus('error occurred'); } catch (_) { }
     if (error?.reason) {
-        showSubtitle(`[${error.reason}]`);
+        try { showAppStatus(String(error.reason)); } catch (_) { }
     }
     connected = false;
     updateSpeakingState(-1);
@@ -1133,13 +1546,13 @@ function processXmlTags(messageObj) {
                 break;
             case "entity":
                 if (tag.attr && tag.attr.type && tag.attr.value) {
-                    const contextMsg = `<system-reminder>Use this ${tag.attr.type} for next question: ${tag.attr.value}</system-reminder>`;
+                    const contextMsg = `<system-reminder>Use this ${tag.attr.type} for next question: ${tag.attr.value}  Don't react to this update.</system-reminder>`;
                     sendContextualMessage(contextMsg);
                     window.debugLog(`CONTEXT: ${tag.attr.type} entity noted - ${tag.attr.value}`, 'system');
                 }
                 break;
             case "eval":
-                sendContextualMessage(tag.attr.prompt);
+                conversation.sendUserMessage(tag.attr.prompt);
                 break;
             case "respond":
                 sendContextualMessage(
@@ -1238,7 +1651,8 @@ async function handleToolCall(cmd, param, text = "") {
 
     if (serverTools.includes(cmd)) {
         isToolLoading = true;
-        showSubtitle("[working]");
+        // Show loader: canvas if initialized, else HTML
+        showAppStatus('working');
     }
 
     window.debugLog(`TOOL: ${cmd} (${param || 'no param'})`, 'system');
@@ -1273,6 +1687,16 @@ async function handleToolCall(cmd, param, text = "") {
                 } else {
                     window.debugLog(`TOOL: payload: ` + text, 'system');
                 }
+                // Provide heading context if available
+                try {
+                    const card = getHeadingCardinal();
+                    const deg = getHeadingDeg();
+                    if (card || (deg != null)) {
+                        const msg = `User heading ${card || ''}${(deg != null) ? ` (${Math.round(deg)}°)` : ''}`.trim();
+                        sendContextualMessage(msg);
+                        window.debugLog(`CONTEXT: ${msg}`, 'system');
+                    }
+                } catch (_) { }
                 if (userCoordinates && userCoordinates.latitude !== 0 && userCoordinates.longitude !== 0) {
                     const coords = `${userCoordinates.latitude},${userCoordinates.longitude}`;
                     endpoint = `/api/tool/poi-search/${encodeURIComponent(coords)}/${encodeURIComponent(param)}`;
@@ -1879,6 +2303,14 @@ async function startConversation() {
                 _join.play();
                 hideDisconnectionBox();
                 loaderStatus('connected');
+                // Acquire screen wake lock on mobile (best-effort)
+                _acquireWakeLockIfMobile();
+                // Initialize subtitle canvas now that app is ready
+                initSubtitleCanvas();
+                // Hide the status display after connection
+                setTimeout(() => {
+                    hideStatusDisplay();
+                }, 500);
 
                 // Log session start
                 if (controlSocket && controlSocketReady) {
@@ -1953,8 +2385,9 @@ async function startConversation() {
                 flush();
                 // Fade out any existing subtitle before disconnection UI
                 fadeOutSubtitle(700);
-                loaderStatus('disconnected');
                 _leave.play();
+                // Release screen wake lock on disconnect
+                _releaseWakeLock();
 
                 // Log session end with duration
                 const sessionEndTime = Date.now();
@@ -2003,8 +2436,8 @@ async function startConversation() {
                 }
 
                 if (!window.userRequestedDisconnect) {
-
-                    showSubtitle("[reconnecting]");
+                    // Show reconnecting status (canvas if initialized)
+                    showAppStatus('reconnecting');
                     setTimeout(async () => {
                         try {
                             await reconnectAgent();
@@ -2032,6 +2465,7 @@ async function startConversation() {
                 }
             },
             onMessage: (m) => {
+                transcript.push({ "from": m.source, "msg": m.message, "time": (Math.floor(Date.now() / 1000)) });
                 if (m.source === "ai") {
                     handleAiMessage(m);
                 } else if (m.source === "user") {
@@ -2162,7 +2596,6 @@ async function startConversation() {
             }
         }
         try { loaderStatus(msg.replace(/^\[|\]$/g, '')); } catch (_) { }
-        showSubtitle(msg);
         showDisconnectionBox();
         _err.play();
     }
@@ -2388,31 +2821,7 @@ window.postLangSel = async function () {
 
 (function () {
     // Preloader removed: no overlay initialization
-
-    // Create subtitle canvas (HiDPI-aware)
-    subtitleCanvas = document.createElement('canvas');
-    subtitleCanvas.id = 'subtitleCanvas';
-    subtitleCanvas.style.position = 'fixed';  // Use fixed instead of absolute
-    subtitleCanvas.style.top = '0';
-    subtitleCanvas.style.left = '0';
-    subtitleCanvas.style.width = window.innerWidth + 'px';
-    subtitleCanvas.style.height = window.innerHeight + 'px';
-    subtitleCanvas.style.pointerEvents = 'none';
-    subtitleCanvas.style.zIndex = '1000';  // Higher z-index to ensure it's on top
-    {
-        const dpr = window.devicePixelRatio || 1;
-        subtitleCanvas.width = Math.floor(window.innerWidth * dpr);
-        subtitleCanvas.height = Math.floor(window.innerHeight * dpr);
-    }
-    document.body.appendChild(subtitleCanvas);
-    subtitleCtx = subtitleCanvas.getContext('2d');
-    // Scale drawing operations to CSS pixels for crisp text on retina
-    if (subtitleCtx) {
-        const dpr = window.devicePixelRatio || 1;
-        subtitleCtx.scale(dpr, dpr);
-    }
-
-    // Verbose loader: initial state
+    // Verbose loader: initial state stays in HTML
     loaderStatus('loading assets');
 
     window.onresize = function () {
@@ -2459,23 +2868,68 @@ window.postLangSel = async function () {
         loaderStatus('initializing ui');
     }
 
-    const constraints = {
-        audio: { noiseSuppression: true }
-    };
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        connected = false;
-        updateSpeakingState(-1);
-        loaderStatus('media api unavailable');
-        showMicrophoneError('media_api_unavailable');
-        _err.play();
-        return;
+    // Mic check first - if no mic available, don't initialize the rest
+    async function checkMicrophone() {
+        const constraints = {
+            audio: { noiseSuppression: true }
+        };
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            connected = false;
+            updateSpeakingState(-1);
+            loaderStatus('media api unavailable');
+            showMicrophoneError('media_api_unavailable');
+            _err.play();
+            return false;
+        }
+
+        loaderStatus('checking microphone');
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            loaderStatus('microphone access granted');
+            return stream;
+        } catch (e) {
+            connected = false;
+            updateSpeakingState(-1);
+            let msg = "[cannot access microphone]";
+            let errorType = 'no_microphone';
+
+            if (e && (e.name || e.code)) {
+                const name = e.name || e.code;
+                if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+                    msg = "[microphone permission denied]";
+                    errorType = 'permission_denied';
+                }
+                else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+                    msg = "[no input audio source detected]";
+                    errorType = 'no_audio_input';
+                }
+                else if (name === 'NotReadableError') {
+                    msg = "[microphone is in use or unavailable]";
+                    errorType = 'microphone_in_use';
+                }
+            }
+
+            showMicrophoneError(errorType);
+            hideLoaderOverlay();
+            _err.play();
+            return false;
+        }
     }
-    loaderStatus('requesting microphone access');
-    navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
-        loaderStatus('microphone access granted');
+
+    // Start mic check and continue only if successful
+    checkMicrophone().then(function (stream) {
+        if (!stream) {
+            // Mic check failed, stop initialization
+            return;
+        }
+
+        loaderStatus('verifying microphone');
         const track = stream.getAudioTracks()[0];
         const deviceId = track.getSettings().deviceId;
-        return navigator.mediaDevices.enumerateDevices().then(devices => {
+
+        navigator.mediaDevices.enumerateDevices().then(devices => {
             const audioInputs = devices.filter(d => d.kind === 'audioinput');
             if (!audioInputs || audioInputs.length === 0) {
                 connected = false;
@@ -2486,8 +2940,10 @@ window.postLangSel = async function () {
                 _err.play();
                 return;
             }
+
             const activeMic = devices.find(device => device.deviceId === deviceId);
             micName = (activeMic ? activeMic.label : "Unknown").toString();
+
             if (micName !== "" && isStereoMix(micName) === true) {
                 connected = false;
                 updateSpeakingState(-1);
@@ -2497,39 +2953,16 @@ window.postLangSel = async function () {
                 hideLoaderOverlay();
                 return;
             }
+
+            // Microphone check passed, proceed with initialization
             loaderStatus('preparing audio');
             initializeAudio(stream);
+        }).catch(function (err) {
+            console.error('Error enumerating devices:', err);
+            loaderStatus('error checking microphone');
+            showMicrophoneError('no_microphone');
+            _err.play();
         });
-    }).catch(function (e) {
-        connected = false;
-        updateSpeakingState(-1);
-        let msg = "[cannot access microphone]";
-        let errorType = 'no_microphone';  // default error type
-
-        if (e && (e.name || e.code)) {
-            const name = e.name || e.code;
-            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-                msg = "[microphone permission denied]";
-                errorType = 'permission_denied';
-            }
-            else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-                msg = "[no input audio source detected]";
-                errorType = 'no_audio_input';
-            }
-            else if (name === 'NotReadableError') {
-                msg = "[microphone is in use or unavailable]";
-                errorType = 'microphone_in_use';
-            }
-            else if (name === 'OverconstrainedError') msg = "[audio constraints not satisfied]";
-            else if (name === 'AbortError') msg = "[audio capture aborted]";
-            else if (name === 'SecurityError') msg = "[secure context required for microphone]";
-            else if (name === 'TypeError') msg = "[invalid audio constraints]";
-        }
-
-        showSubtitle(msg);
-        showMicrophoneError(errorType);  // Show the big error message
-        hideLoaderOverlay();
-        _err.play();
     });
 })();
 

@@ -150,6 +150,56 @@ body {
   font-family: "Jost", Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* Centered Status Display */
+#statusDisplay {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10000;
+    pointer-events: none;
+    display: none;
+}
+
+#statusDisplay.active {
+    display: block;
+}
+
+#statusText {
+    color: white;
+    font-size: 18px;
+    font-weight: 400;
+    text-align: center;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
+
+/* Loader progress bar (cache-bust via new id) */
+#statusLinear {
+    margin: 10px auto 0 auto;
+    width: 260px;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+    opacity: 1;
+    transition: opacity 0.4s ease 0.15s;
+}
+
+#statusLinearBar {
+    height: 100%;
+    width: 0%;
+    background: #5ce600;
+    border-radius: 4px;
+    transition: width 0.25s ease, opacity 0.4s ease;
+}
+
+/* Fade-out state once loading completes */
+#statusLinear.is-done {
+    opacity: 0;
+}
+
 div#subtitle {
   position: absolute;
   background: none;

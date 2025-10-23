@@ -247,7 +247,7 @@ function buildErrorResponse(errorType, serviceName, toolCmd) {
 
 // Provide detailed error context for the agent to translate
 function getDetailedErrorMessage(errorType) {
-    switch(errorType) {
+    switch (errorType) {
         case 'TIMEOUT':
             return 'The service took too long to respond. Please try again.';
         case 'NOT_FOUND':
@@ -723,6 +723,14 @@ app.use(cookieParser());
 const trustProxy = true;
 app.set('trust proxy', trustProxy);
 
+// Global permissions policy for sensors
+app.use((req, res, next) => {
+    try {
+        res.set('Permissions-Policy', 'accelerometer=(self), magnetometer=(self), gyroscope=(self)');
+    } catch (_) { }
+    next();
+});
+
 // Note: static middleware is mounted after compression route to allow negotiation
 
 // -------------------------------------------------------------
@@ -759,6 +767,23 @@ function sendCompressedBuffer(req, res, buffer, ctype) {
     res.setHeader('Vary', 'Accept-Encoding');
     res.setHeader('Content-Type', ctype);
 
+    // Caching policy
+    try {
+        const p = (req.path || '').toString();
+        if (p.startsWith('/static/')) {
+            // Long-term cache for versioned/static assets
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); // 1 year
+        } else if (p === '/manifest.json') {
+            // Treat manifest as an asset as well
+            res.setHeader('Cache-Control', 'public, max-age=31536000');
+        } else if ((ctype || '').includes('text/html')) {
+            // Never cache HTML shell
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    } catch (_) { /* noop */ }
+
     if (enc === 'br') {
         try {
             const out = zlib.brotliCompressSync(buffer);
@@ -790,6 +815,10 @@ function sendCompressedBuffer(req, res, buffer, ctype) {
 
 async function sendCompressedFile(req, res, absPath) {
     try {
+        const stat = await fs.promises.stat(absPath).catch(() => null);
+        if (stat) {
+            try { res.setHeader('Last-Modified', stat.mtime.toUTCString()); } catch (_) { }
+        }
         const data = await fs.promises.readFile(absPath);
         const ctype = contentTypeFor(absPath);
         sendCompressedBuffer(req, res, data, ctype);
@@ -797,6 +826,8 @@ async function sendCompressedFile(req, res, absPath) {
         res.status(404).end('Not found');
     }
 }
+
+// (Reverted) Dedicated pre-compressed + range support for bundle.js removed.
 
 // Intercept static file requests to serve with negotiated compression
 app.get('/static/*', async (req, res, next) => {
@@ -812,7 +843,14 @@ app.get('/static/*', async (req, res, next) => {
 });
 
 // Fallback static serving for any remaining assets
-app.use("/static", express.static(path.join(__dirname, "./dist")));
+app.use("/static", express.static(path.join(__dirname, "./dist"), {
+    etag: true,
+    maxAge: '1y',
+    setHeaders: (res, filePath) => {
+        // Ensure long-lived caching for all assets here
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+}));
 
 // Serve manifest.json for PWA support
 app.get("/manifest.json", async (req, res) => {
@@ -820,6 +858,7 @@ app.get("/manifest.json", async (req, res) => {
         const filePath = path.join(__dirname, "./dist/manifest.json");
         await sendCompressedFile(req, res, filePath);
     } catch (_) {
+        res.set('Cache-Control', 'public, max-age=31536000');
         res.sendFile(path.join(__dirname, "./dist/manifest.json"));
     }
 });
@@ -866,7 +905,25 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
     var voiceId = process.env["VOICE_" + prefLang.toString().toUpperCase()] || process.env.VOICE_EN;
     const characterPath = path.join(__dirname, `./content/${prefLang}/agent.md`);
     const uidQuery = userdata[13] || "0";
+    const clientOrientation = userdata[14] || '';
+    const clientBatteryLevel = userdata[15] ? parseInt(userdata[15]) : null;
+    const clientBatteryCharging = userdata[16] === '1';
+    const clientHeadingDeg = userdata[17] ? parseInt(userdata[17]) : null;
+    const clientHeadingCard = userdata[18] || '';
+    const clientPhonePose = userdata[19] || '';
 
+    if (clientOrientation) {
+        try { console.log('-- client orientation:', clientOrientation); } catch (_) {}
+    }
+    if (!isNaN(clientBatteryLevel) || userdata[16] !== undefined) {
+        try { console.log('-- client battery:', `${isNaN(clientBatteryLevel) ? 'n/a' : clientBatteryLevel + '%'}`, clientBatteryCharging ? '(charging)' : '(not charging)'); } catch (_) {}
+    }
+    if (!isNaN(clientHeadingDeg) || clientHeadingCard) {
+        try { console.log('-- client heading:', `${isNaN(clientHeadingDeg) ? 'n/a' : clientHeadingDeg + '°'}`, clientHeadingCard ? `(${clientHeadingCard})` : ''); } catch (_) {}
+    }
+    if (clientPhonePose) {
+        try { console.log('-- client phone pose:', clientPhonePose); } catch (_) {}
+    }
     const geoleft = parseInt(geostate.explode(":", 1));
     var geocomment = "";
     if (geoleft > 60 && geoleft < 14400) {
@@ -955,7 +1012,17 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
         currency: getUserCurrency(geo.flag),
         userName: userName,
         userId: persistentUserId,  // Persistent ID for transcript files
-        systemPrompt: system_prompt  // Store system prompt for user directory initialization
+        systemPrompt: system_prompt,  // Store system prompt for user directory initialization
+        orientation: clientOrientation,
+        battery: {
+            level: isNaN(clientBatteryLevel) ? null : clientBatteryLevel,
+            charging: clientBatteryCharging
+        },
+        heading: {
+            deg: isNaN(clientHeadingDeg) ? null : clientHeadingDeg,
+            card: clientHeadingCard || null
+        },
+        phonePose: clientPhonePose || null
     };
 
     //    fs.writeFileSync(path.join(__dirname, "./last_system_prompt.md"), system_prompt);

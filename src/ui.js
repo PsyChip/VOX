@@ -6,9 +6,8 @@ export function showDisconnectionBox() {
   const box = document.createElement('div');
   box.id = 'disconnectionBox';
 
-  const message = document.createElement('span');
-  message.textContent = 'Agent is disconnected';
-
+  box.textContent = 'Agent is disconnected.';
+  // Removed static 'disconnected' label to avoid duplicate messaging
   const button = document.createElement('button');
   button.textContent = 'Call again';
   const onReconnect = (typeof window !== 'undefined' && window.reconnectAgent) ? window.reconnectAgent : null;
@@ -16,7 +15,6 @@ export function showDisconnectionBox() {
     button.onclick = onReconnect;
   }
 
-  box.appendChild(message);
   box.appendChild(button);
   document.body.appendChild(box);
 }

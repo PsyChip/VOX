@@ -5,12 +5,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#1b5e00">
-  <meta name="description"
-    content="A conversational AI agent powered by ElevenLabs with real-time audio visualization and integrated tools">
+  <meta name="description" content="conversational AI agent with real-time audio visualization and integrated tools">
   <link rel="manifest" href="/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Preload Google Fonts stylesheet then apply; keep noscript fallback -->
+  <link id="gf-jost" rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap"></noscript>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/lipis/flag-icons@7.2.3/css/flag-icons.min.css">
   <link rel="stylesheet" href="/static/styles.css">
@@ -21,6 +22,14 @@
 </head>
 
 <body>
+  <!-- Status Display - Centered loader messages -->
+  <div id="statusDisplay">
+    <div id="statusText"></div>
+    <div id="statusLinear">
+      <div id="statusLinearBar"></div>
+    </div>
+  </div>
+
   <!-- Language Selection Overlay -->
   <div id="languageSelectionOverlay">
     <div id="languageCards">
@@ -59,28 +68,22 @@
     </div>
   </div>
 
-  
+
   <canvas id="canvas"></canvas>
   <canvas id="galleryCanvas"></canvas>
   <canvas id="volumeCanvas"></canvas>
 
-  <!-- Fullscreen Image Modal -->
   <div id="imageModal" class="image-modal">
     <span id="closeModal" class="close-modal">&times;</span>
     <img id="modalImage" class="modal-content" alt="">
   </div>
 
-  <!-- <div id="subtitle">[connecting]</div> --> <!-- Hidden: now using canvas-based subtitles -->
-
-  <!-- Topic Display -->
   <div id="topicDisplay">
     <div id="topicTitle"></div>
     <div id="topicTags"></div>
   </div>
 
-  <!-- Top Right Controls -->
   <div id="topRightControls">
-    <!-- Connection Quality (Signal Bars) -->
     <div id="connectionQuality" class="connection-quality" title="ping: --">
       <div class="signal-bars" aria-label="Connection quality">
         <span class="bar bar-1"></span>
@@ -162,15 +165,20 @@
     </div>
   </div>
 
-  <script src="/static/sun.js"></script>
-  <script src="/static/sound.js"></script>
-  <script src="/static/noise.js"></script>
-  <script>
-  // Chat mode removed: always load voice bundle
-  document.write('<script src="/static/bundle.js"><\/script>');
-</script>
+  <!-- Load only the lightweight loader first; it will perform checks and sideload other assets if supported -->
+  <script src="/static/loader.js" defer></script>
   <script type="text/javascript">
-    // Text Input Window functionality
+    // Show initial status immediately
+    (function () {
+      const statusDisplay = document.getElementById('statusDisplay');
+      const statusText = document.getElementById('statusText');
+      if (statusDisplay && statusText) {
+        statusDisplay.classList.add('active');
+        statusText.textContent = 'initializing';
+      }
+    })();
+  </script>
+  <script type="application/json" data-moved="page-ui">
     (function () {
       const textWindow = document.getElementById('textInputWindow');
       const textInputArea = document.getElementById('textInputArea');
@@ -583,7 +591,7 @@
       };
     })();
   </script>
-  <script type="text/javascript">
+  <script type="application/json" data-moved="lang-overlay">
     // Top Right Controls Logic
     (function () {
       const topRightControls = document.getElementById('topRightControls');
@@ -792,7 +800,7 @@
   <!-- Chat Mode UI removed -->
 
   <!-- Image Gallery Animation System -->
-  <script type="text/javascript">
+  <script type="application/json" data-moved="gallery">
     (function () {
       const galleryCanvas = document.getElementById('galleryCanvas');
       const galleryCtx = galleryCanvas.getContext('2d');

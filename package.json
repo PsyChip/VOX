@@ -1,5 +1,12 @@
 {
-  "sideEffects": false,
+  "sideEffects": [
+    "src/noise.js",
+    "src/sound.js",
+    "src/sun.js",
+    "src/page-ui.js",
+    "src/gallery.js",
+    "src/app.js"
+  ],
   "name": "VOX",
   "version": "1.0.0",
   "description": "Simple voice agent featuring DSP and FFT processing at client side. Uses elevenlabs agents api",
@@ -12,7 +19,6 @@
   "dependencies": {
     "@elevenlabs/client": "^0.7.0",
     "@maxmind/geoip2-node": "^6.1.0",
-    "ws": "^8.17.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
@@ -20,7 +26,8 @@
     "flag-icons": "^7.5.0",
     "mathjs": "^14.8.2",
     "tiktoken": "^1.0.17",
-    "ua-parser-js": "^2.0.6"
+    "ua-parser-js": "^2.0.6",
+    "ws": "^8.17.0"
   },
   "devDependencies": {
     "concurrently": "^8.0.1",

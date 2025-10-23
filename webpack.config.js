@@ -21,7 +21,11 @@ async function minifyJs(contentBuffer) {
         if (!terserLib) return contentBuffer;
         const input = contentBuffer.toString();
         const result = await terserLib.minify(input, {
-            compress: { passes: 2 },
+            compress: {
+                passes: 2,
+                drop_console: false,  // Keep console.log statements
+                drop_debugger: false  // Keep debugger statements
+            },
             mangle: true,
             format: { comments: false }
         });
@@ -53,9 +57,9 @@ module.exports = {
             })
         ],
         usedExports: true, // Tree shaking
-        sideEffects: false
+        sideEffects: true
     },
-    entry: './src/app.js',
+    entry: './src/entry.js',
     output: {
         filename: 'bundle.js',
         path: path.resolve(__dirname, 'dist'),
@@ -95,6 +99,7 @@ module.exports = {
                     }
                 },
                 { from: 'src/styles.css', to: 'styles.css' },
+                { from: 'src/loader.js', to: 'loader.js', transform: minifyJs },
                 // Chat mode removed; no chat.js or chat.css copied
             ]
         })
