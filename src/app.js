@@ -1817,16 +1817,37 @@ async function handleToolCall(cmd, param, text = "") {
             case 'take-note':
                 window.debugLog(`TOOL: take-note - Creating note file`, 'system');
 
-                const parts = param.split('|');
-                let noteTitle, noteContentText;
-
-                if (parts.length === 2) {
-                    noteTitle = parts[0].trim();
-                    noteContentText = parts[1].trim();
-                } else {
-                    noteTitle = 'note';
-                    noteContentText = param;
+                // Find the last user message from transcript as note content
+                let noteContentText = '';
+                for (let i = transcript.length - 1; i >= 0; i--) {
+                    const entry = transcript[i];
+                    if (entry && entry.from === 'user' && entry.msg && entry.msg.trim() && entry.msg !== '...') {
+                        noteContentText = String(entry.msg).trim();
+                        break;
+                    }
                 }
+
+                // Fallback to provided param only if transcript is empty (backward compatibility)
+                if (!noteContentText) {
+                    noteContentText = (param || '').trim();
+                }
+
+                if (!noteContentText) {
+                    window.debugLog('TOOL: take-note - No user message found to save as note', 'system');
+                    showNotification('Note not saved', 'No recent user message found');
+                    break;
+                }
+
+                // Generate a 3-word snake_case title from the note content
+                const words = noteContentText
+                    .toLowerCase()
+                    .replace(/[^a-z0-9\s]/gi, ' ')
+                    .split(/\s+/)
+                    .filter(Boolean);
+
+                let titleWords = words.slice(0, 3);
+                while (titleWords.length < 3) titleWords.push('note');
+                const noteTitle = titleWords.join('_');
 
                 const noteContent = `# ${noteTitle.replace(/_/g, ' ')}\n\n${noteContentText}\n\n---\n\nSaved on ${new Date().toLocaleString()}\n`;
                 const noteBlob = new Blob([noteContent], { type: 'text/markdown' });
@@ -1834,7 +1855,7 @@ async function handleToolCall(cmd, param, text = "") {
                 const noteLink = document.createElement('a');
                 noteLink.href = noteUrl;
                 noteLink.download = `${noteTitle}.md`;
-                showNotification(noteLink.download, "Note saved to disk");
+                showNotification(noteLink.download, 'Note saved to disk');
                 document.body.appendChild(noteLink);
                 noteLink.click();
                 document.body.removeChild(noteLink);
@@ -1852,13 +1873,36 @@ async function handleToolCall(cmd, param, text = "") {
             case 'tune-behaviour':
                 window.debugLog(`TOOL: tune-behaviour - Processing behaviour tuning request`, 'system');
                 try {
+                    // Find the last user message from transcript
+                    let lastUserMessage = '';
+                    for (let i = transcript.length - 1; i >= 0; i--) {
+                        const entry = transcript[i];
+                        if (entry && entry.from === 'user' && entry.msg && entry.msg.trim() && entry.msg !== '...') {
+                            lastUserMessage = String(entry.msg).trim();
+                            break;
+                        }
+                    }
+
                     const parts = param.split('|');
-                    if (parts.length !== 3) {
+                    if (parts.length !== 2 && parts.length !== 3) {
                         window.debugLog(`TOOL: tune-behaviour - Invalid format`, 'system');
                         break;
                     }
 
-                    const [category, user_request, user_transcript] = parts;
+                    let category, user_request, user_transcript;
+
+                    if (parts.length === 2) {
+                        // New format: category|user_request (user_transcript from transcript array)
+                        [category, user_request] = parts;
+                        user_transcript = lastUserMessage || user_request;
+                    } else {
+                        // Legacy format: category|user_request|user_transcript
+                        [category, user_request, user_transcript] = parts;
+                        // If user_transcript is empty or placeholder, use last user message
+                        if (!user_transcript || user_transcript.trim() === '' || user_transcript === 'undefined') {
+                            user_transcript = lastUserMessage || user_request;
+                        }
+                    }
 
                     const response = await wsApiRequest('POST', '/api/tool/tune-behaviour', {
                         category: category.trim(),

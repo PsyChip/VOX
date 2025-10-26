@@ -913,16 +913,16 @@ app.get("/api/signed-url/:userdata", async (req, res) => {
     const clientPhonePose = userdata[19] || '';
 
     if (clientOrientation) {
-        try { console.log('-- client orientation:', clientOrientation); } catch (_) {}
+        try { console.log('-- client orientation:', clientOrientation); } catch (_) { }
     }
     if (!isNaN(clientBatteryLevel) || userdata[16] !== undefined) {
-        try { console.log('-- client battery:', `${isNaN(clientBatteryLevel) ? 'n/a' : clientBatteryLevel + '%'}`, clientBatteryCharging ? '(charging)' : '(not charging)'); } catch (_) {}
+        try { console.log('-- client battery:', `${isNaN(clientBatteryLevel) ? 'n/a' : clientBatteryLevel + '%'}`, clientBatteryCharging ? '(charging)' : '(not charging)'); } catch (_) { }
     }
     if (!isNaN(clientHeadingDeg) || clientHeadingCard) {
-        try { console.log('-- client heading:', `${isNaN(clientHeadingDeg) ? 'n/a' : clientHeadingDeg + '°'}`, clientHeadingCard ? `(${clientHeadingCard})` : ''); } catch (_) {}
+        try { console.log('-- client heading:', `${isNaN(clientHeadingDeg) ? 'n/a' : clientHeadingDeg + '°'}`, clientHeadingCard ? `(${clientHeadingCard})` : ''); } catch (_) { }
     }
     if (clientPhonePose) {
-        try { console.log('-- client phone pose:', clientPhonePose); } catch (_) {}
+        try { console.log('-- client phone pose:', clientPhonePose); } catch (_) { }
     }
     const geoleft = parseInt(geostate.explode(":", 1));
     var geocomment = "";
