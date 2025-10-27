@@ -1,6 +1,3 @@
-// Page UI bootstrap: text input window, debug console, top-right controls, language overlay
-
-// Text Input Window
 (function () {
   const textWindow = document.getElementById('textInputWindow');
   const textInputArea = document.getElementById('textInputArea');
@@ -18,7 +15,6 @@
   let initialX;
   let initialY;
 
-  // Store default dimensions
   const defaultWidth = 400;
   const defaultHeight = 300;
 
@@ -40,7 +36,6 @@
 
   centerWindow();
 
-  // Restore window state
   const savedState = localStorage.getItem('textInputWindowState');
   if (savedState) {
     try {
@@ -164,7 +159,6 @@
   resizeObserver.observe(textWindow);
 })();
 
-// Debug Console + Call Controls
 (function () {
   const debugConsole = document.getElementById('debugConsole');
   const debugLog = document.getElementById('debugLog');
@@ -290,7 +284,6 @@
   });
   resizeObserver.observe(debugConsole);
 
-  // Call control buttons
   (function () {
     const muteBtn = document.getElementById('muteBtn');
     const endCallBtn = document.getElementById('endCallBtn');
@@ -333,7 +326,6 @@
     });
   })();
 
-  // Debug logging function
   window.debugLog = function (message, type = 'system') {
     try {
       const li = document.createElement('li');
@@ -348,11 +340,10 @@
       if (debugLog && debugLog.children.length > 500) {
         debugLog.removeChild(debugLog.firstChild);
       }
-    } catch (_) { /* noop */ }
+    } catch (_) { }
   };
 })();
 
-// Top Right Controls
 (function () {
   const topRightControls = document.getElementById('topRightControls');
   const toggleDebugBtn = document.getElementById('toggleDebugBtn');
@@ -403,7 +394,6 @@
     if (currentLangText) currentLangText.textContent = langData[lang].name;
     document.querySelectorAll('.lang-option').forEach(opt => opt.classList.remove('selected'));
     option.classList.add('selected');
-    // Let the agent know via tool later; page reload handled via tool in app.js
   });
 
   toggleDebugBtn && toggleDebugBtn.addEventListener('click', function () {
@@ -464,7 +454,6 @@
   });
 })();
 
-// Language Selection Overlay
 (function () {
   const languageData = {
     en: {
@@ -514,4 +503,3 @@
     overlay.style.display = 'none';
   }
 })();
-

@@ -5,7 +5,7 @@ import sound from './sound';
 import Sun from './sun';
 import { evaluate } from 'mathjs';
 import { detectPerformance, getDayPhase, getLocalTime24, tzOffset, isStereoMix, stripXmlTags, xmlToJson } from './utils';
-import { showDisconnectionBox, hideDisconnectionBox, updateTopicDisplay, clearTopicDisplay, showCategoryIndicator, handleLink, showNotification, initTouchUI } from './ui';
+import { showDisconnectionBox, hideDisconnectionBox, updateTopicDisplay, clearTopicDisplay, showCategoryIndicator, handleLink, showNotification, initTouchUI, toolStatus } from './ui';
 
 const SPEECH_THRESHOLD = 15;
 const SILENCE_THRESHOLD = 10;
@@ -15,6 +15,7 @@ const TOUCH_UI_TIMEOUT = 5000;
 const COORDINATE_CHECK_INTERVAL = 60000;
 const DRIFT_REMINDER_INTERVAL = 10;
 const DRIFT_REMINDER_DELAY = 15000;
+const subcontext = "Use this information to respond user's next message but do not react to this contextual update. respond with <silence/>";
 
 // Context behavior control:
 // 0 = No contextual updates at all
@@ -283,7 +284,7 @@ async function startCompassSensors(waitForFirst = false) {
                 _orientationPermissionRequested = true;
                 // Try to request on first user gesture
                 const req = async () => {
-                    try { await DeviceOrientationEvent.requestPermission().catch(() => {}); } catch (_) { }
+                    try { await DeviceOrientationEvent.requestPermission().catch(() => { }); } catch (_) { }
                     setupDo();
                     try { window.removeEventListener('touchstart', req, { capture: true }); } catch (_) { try { window.removeEventListener('touchstart', req); } catch (_) { } }
                     window.removeEventListener('click', req, true);
@@ -672,7 +673,7 @@ function startCoordinateMonitoring() {
                     const lonDiff = Math.abs(newCoords.longitude - lastReportedCoordinates.longitude);
 
                     if (latDiff > 0.0001 || lonDiff > 0.0001) {
-                        const contextMsg = `<system-reminder>User's coordinates changed to: ${newCoords.latitude.toFixed(6)}, ${newCoords.longitude.toFixed(6)} use those coordinates on your geographic tool calls.</system-reminder>`;
+                        const contextMsg = `<system-reminder>User's coordinates changed to: ${newCoords.latitude.toFixed(6)}, ${newCoords.longitude.toFixed(6)} use those coordinates on your geographic tool calls. ${subcontext}</system-reminder>`;
                         sendContextualMessage(contextMsg);
                         lastReportedCoordinates = { ...newCoords };
                     } else {
@@ -1250,11 +1251,13 @@ function detectSpeechActivity() {
         speechSamplesAboveThreshold = Math.max(0, speechSamplesAboveThreshold - 1);
     }
 }
+
 async function reconnectAgent() {
     hideDisconnectionBox();
     window.userRequestedDisconnect = false;
     await startConversation();
 }
+
 async function initializeTools() {
     try {
         loaderStatus('loading tools');
@@ -1340,7 +1343,7 @@ async function initializeTools() {
                 const onceHandler = () => {
                     if (once) return; once = true;
                     tryLock();
-                    try { window.removeEventListener('touchstart', onceHandler, { capture: true }); } catch (_) { try { window.removeEventListener('touchstart', onceHandler); } catch (_) {} }
+                    try { window.removeEventListener('touchstart', onceHandler, { capture: true }); } catch (_) { try { window.removeEventListener('touchstart', onceHandler); } catch (_) { } }
                     window.removeEventListener('click', onceHandler, true);
                 };
                 try {
@@ -1403,7 +1406,7 @@ async function initializeTools() {
                             const pct = Math.round((bm.level || 0) * 100);
                             const diff = Math.abs(pct - lastLevelSent);
                             if (diff >= MIN_DIFF_PCT && (now - lastLevelSentAt) >= MIN_INTERVAL_MS) {
-                                sendContextualMessage(`user's device battery status: ${pct}%`);
+                                sendContextualMessage(`user's device battery status: ${pct}% warn user if it's below 20% which may affect ongoing conversation`);
                                 if (window.debugLog) window.debugLog(`BATTERY: levelchange -> ${pct}% (sent)`, 'system');
                                 lastLevelSent = pct;
                                 lastLevelSentAt = now;
@@ -1420,7 +1423,7 @@ async function initializeTools() {
                                 return;
                             }
                             if (bm.charging !== lastChargeState || (now - lastChargeSentAt) >= MIN_INTERVAL_MS) {
-                                const msg = bm.charging ? 'user connected to charger' : 'user disconnected from charger';
+                                const msg = bm.charging ? 'user connected to charger, tell approximate charging time for 5000mah battery with last known battery level' : 'user disconnected from charger, briefly tell the user last known battery level';
                                 sendContextualMessage(msg);
                                 if (window.debugLog) window.debugLog(`BATTERY: chargingchange -> ${bm.charging ? 'charging' : 'not charging'} (sent)`, 'system');
                                 lastChargeState = bm.charging;
@@ -1475,7 +1478,6 @@ function handleConversationError(error) {
     _err.play();
     hideDisconnectionBox();
     flush();
-    // Show errors: canvas after init, otherwise HTML
     try { showAppStatus('error occurred'); } catch (_) { }
     if (error?.reason) {
         try { showAppStatus(String(error.reason)); } catch (_) { }
@@ -1485,7 +1487,6 @@ function handleConversationError(error) {
 }
 
 function sendDriftReminderIfNeeded() {
-    // Only send drift reminders if CONTEXT_BEHAVIOUR is 1 or 2
     if (CONTEXT_BEHAVIOUR === 0) {
         return;
     }
@@ -1513,21 +1514,33 @@ function processXmlTags(messageObj) {
     }
 
     const tags = Array.isArray(data) ? data : [data];
-    console.log(tags);
-    for (const tag of tags) {
-        if (!tag || !tag.tag) continue;
-        switch (tag.tag) {
-            case "silence":
-                if (speakingState === 1) {
-                    window.debugLog('CONTEXT: silence tag received but agent is still talking', 'system');
-                    return;
-                }
-                window.debugLog(`CONTEXT: silence tag received - muting audio for 750ms`, 'system');
+
+    // Coalesce multiple <silence/> tags into a single action
+    try {
+        const silenceCount = tags.reduce((n, t) => (t && t.tag === 'silence') ? n + 1 : n, 0);
+        if (silenceCount > 0) {
+            if (speakingState === 1) {
+                window.debugLog('CONTEXT: silence tag received but agent is still talking', 'system');
+                return; // keep original behavior: ignore further tags when silence arrives during speech
+            } else {
+                window.debugLog(`CONTEXT: silence tag${silenceCount > 1 ? 's' : ''} received - muting audio once for 900ms`, 'system');
                 const currentValue = masterGainNode.gain.value;
                 masterGainNode.gain.value = 0;
                 setTimeout(function () {
                     masterGainNode.gain.value = currentValue;
                 }, 900);
+            }
+        }
+    } catch (_) { /* noop */ }
+
+    console.log(tags);
+    for (const tag of tags) {
+        if (!tag || !tag.tag) continue;
+        // Skip individual handling of duplicate <silence/> tags; already handled once above
+        if (tag.tag === 'silence') continue;
+        switch (tag.tag) {
+            case "silence":
+                // Handled via coalescing above
                 break;
             case "action":
                 if (tag.attr && tag.attr.cmd) {
@@ -1546,7 +1559,7 @@ function processXmlTags(messageObj) {
                 break;
             case "entity":
                 if (tag.attr && tag.attr.type && tag.attr.value) {
-                    const contextMsg = `<system-reminder>Use this ${tag.attr.type} for next question: ${tag.attr.value}  Don't react to this update.</system-reminder>`;
+                    const contextMsg = `<system-reminder>Use this ${tag.attr.type} for next question: ${tag.attr.value}  ${subcontext}.</system-reminder>`;
                     sendContextualMessage(contextMsg);
                     window.debugLog(`CONTEXT: ${tag.attr.type} entity noted - ${tag.attr.value}`, 'system');
                 }
@@ -1649,10 +1662,17 @@ async function handleToolCall(cmd, param, text = "") {
         'local-events', 'get-address', 'flight-search', 'author'
     ];
 
+    const toolDesc = [
+        'SEARCHING WEB, PLEASE WAIT', 'FETCHING CURRENT WEATHER', 'GETTING LATEST NEWS', 'FETCHING LATEST FX RATES',
+        'CHECKING LATEST EARTHQUAKES', 'LOOKING FOR NEARBY POINTS OF INTEREST', 'TRACKING AIRCRAFTS',
+        'LOOKING UP FOR EVENTS', 'RESOLVING ADDRESS', 'SEARCHING FOR FLIGHTS', 'GENERATING CONTENT PLEASE WAIT'
+    ];
+
     if (serverTools.includes(cmd)) {
         isToolLoading = true;
         // Show loader: canvas if initialized, else HTML
         showAppStatus('working');
+        toolStatus(toolDesc[serverTools.indexOf(cmd)] || 'PROCESSING REQUEST PLEASE WAIT');
     }
 
     window.debugLog(`TOOL: ${cmd} (${param || 'no param'})`, 'system');
@@ -1716,6 +1736,7 @@ async function handleToolCall(cmd, param, text = "") {
 
                 window.debugLog(`TOOL: ${cmd} completed successfully`, 'system');
                 isToolLoading = false;
+                toolStatus();
                 break;
 
             case 'web-search':
@@ -1746,6 +1767,8 @@ async function handleToolCall(cmd, param, text = "") {
 
                 window.debugLog(`TOOL: ${cmd} completed successfully`, 'system');
                 isToolLoading = false;
+                toolStatus();
+
                 break;
 
             case 'author':
@@ -1867,7 +1890,7 @@ async function handleToolCall(cmd, param, text = "") {
                 window.debugLog(`TOOL: save-name - Saving name "${param}" to localStorage`, 'system');
                 localStorage.setItem('userName', param);
                 window.debugLog(`TOOL: save-name completed`, 'system');
-                sendContextualMessage("<system-reminder>User change his name to: " + param + " call him by this name from now on</system-reminder>");
+                sendContextualMessage("<system-reminder>User change his name to: " + param + " call him by this name from now on. " + subcontext + "</system-reminder>");
                 showNotification("User name changed", "Name changed to " + param);
                 break;
             case 'tune-behaviour':
@@ -2113,6 +2136,8 @@ async function handleToolCall(cmd, param, text = "") {
     } finally {
         if (isToolLoading) {
             isToolLoading = false;
+            toolStatus();
+
         }
     }
 }
@@ -2128,7 +2153,7 @@ function handleTopic(topic) {
         };
         localStorage.setItem('lastTopic', JSON.stringify(topicData));
 
-        const contextMsg = `<system-reminder>The topic is now: ${topic.title}</system-reminder>`;
+        const contextMsg = `<system-reminder>The topic is now: ${topic.title}, ${subcontext}.</system-reminder>`;
         sendContextualMessage(contextMsg);
         window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
 
@@ -2411,7 +2436,7 @@ async function startConversation() {
                                             address.trim().length >= 10 &&
                                             address !== 'null' &&
                                             address !== 'undefined') {
-                                            const contextMsg = `<system-reminder>User's home address is set to: ${address}.</system-reminder>`;
+                                            const contextMsg = `<system-reminder>User's home address is set to: ${address}. ${subcontext}</system-reminder>`;
                                             sendContextualMessage(contextMsg);
                                         }
                                     }
@@ -2612,7 +2637,7 @@ async function startConversation() {
 
         window.onblur = function () {
             if (connected) {
-                const contextMsg = "User navigated to another page. Consider it for next response, but don't react to this contextual update.";
+                const contextMsg = "User navigated to another page. " + subcontext;
                 sendContextualMessage(contextMsg);
                 window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
             }
@@ -2620,7 +2645,7 @@ async function startConversation() {
 
         window.onfocus = function () {
             if (connected) {
-                const contextMsg = "User returned to the page.";
+                const contextMsg = "User returned to the page." + subcontext;
                 sendContextualMessage(contextMsg);
                 window.debugLog(`CONTEXT: ${contextMsg}`, 'system');
             }

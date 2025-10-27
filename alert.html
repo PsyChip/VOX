@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #2a2a2a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .alertBox {
+            width: 320px;
+            height: 60px;
+            position: relative;
+            overflow: hidden;
+            transition: width .15s ease-in-out;
+        }
+
+        .alertBox:before {
+            display: block;
+            content: "";
+            width: 100%;
+            height: 100%;
+            animation: bgpulse 1s linear infinite;
+            position: Absolute;
+            left: 0;
+            top: 0;
+            background: linear-gradient(135deg, #4a4a00 0%, #3a3a00 100%);
+        }
+
+        .scrollText {
+            position: absolute;
+            white-space: nowrap;
+            font-family: 'Bebas Neue', Arial, sans-serif;
+            font-size: 38px;
+            line-height: 34px;
+            font-weight: 400;
+            color: #ffff00;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            animation: scroll 25s linear infinite;
+            transform: translateX(1%);
+            padding: 16px 0;
+            left: 0;
+            display: block;
+        }
+
+        @keyframes scroll {
+            0% {
+                transform: translateX(1%);
+            }
+
+            100% {
+                transform: translateX(-100%);
+            }
+        }
+
+        @keyframes bgpulse {
+            0% {
+                opacity: 1.0;
+            }
+
+            50% {
+                opacity: 0.1;
+            }
+
+            100% {
+                opacity: 1.0;
+            }
+
+        }
+
+        .cornerTL {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 10px;
+            height: 10px;
+            border-top: 2px solid #FDFD12;
+            border-left: 2px solid #FDFD12;
+        }
+
+        .cornerTR {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            border-top: 2px solid #FDFD12;
+            border-right: 2px solid #FDFD12;
+        }
+
+        .cornerBL {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 10px;
+            height: 10px;
+            border-bottom: 2px solid #FDFD12;
+            border-left: 2px solid #FDFD12;
+        }
+
+        .cornerBR {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 10px;
+            height: 10px;
+            border-bottom: 2px solid #FDFD12;
+            border-right: 2px solid #FDFD12;
+        }
+
+        .alertBox span {
+            opacity: 0.85;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="alertBox">
+        <span class="cornerTL"></span>
+        <span class="cornerTR"></span>
+        <span class="cornerBL"></span>
+        <span class="cornerBR"></span>
+        <div class="scrollText">SEARCHING FLIGHTS TO AMSTERDAM // SEARCHING FLIGHTS TO AMSTERDAM // SEARCHING FLIGHTS TO AMSTERDAM // SEARCHING FLIGHTS TO AMSTERDAM // SEARCHING FLIGHTS TO AMSTERDAM // SEARCHING FLIGHTS TO AMSTERDAM</div>
+    </div>
+</body>
+
+</html>

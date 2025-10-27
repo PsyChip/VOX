@@ -1,4 +1,3 @@
-// Image Gallery Animation System (extracted from index.html)
 (function () {
   const galleryCanvas = document.getElementById('galleryCanvas');
   if (!galleryCanvas) return;

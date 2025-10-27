@@ -1,4 +1,21 @@
-// UI utilities: disconnection UI controls
+export function toolStatus(status) {
+  const alertBox = document.querySelector('.alertBox');
+  const scrollText = alertBox.querySelector('.scrollText');
+
+  if (!status || status.trim() === '') {
+    alertBox.classList.remove('active');
+    return;
+  }
+
+  let fullText = '';
+  while (fullText.length < 200) {
+    fullText += status + '  ///  ';
+  }
+  fullText = fullText.slice(0, 200);
+
+  scrollText.textContent = fullText;
+  alertBox.classList.add('active');
+}
 
 export function showDisconnectionBox() {
   hideDisconnectionBox();
@@ -7,7 +24,6 @@ export function showDisconnectionBox() {
   box.id = 'disconnectionBox';
 
   box.textContent = 'Agent is disconnected.';
-  // Removed static 'disconnected' label to avoid duplicate messaging
   const button = document.createElement('button');
   button.textContent = 'Call again';
   const onReconnect = (typeof window !== 'undefined' && window.reconnectAgent) ? window.reconnectAgent : null;
@@ -47,7 +63,6 @@ export function showCategoryIndicator(category) {
   indicator.classList.add('show');
 }
 
-// Notifications
 let notificationContainerEl = null;
 function ensureNotificationContainer() {
   if (!notificationContainerEl) {
@@ -105,11 +120,6 @@ export function showNotification(title, description, iconUrl) {
   }, 6000);
 }
 
-// Developer rule trace overlay
-let ruleTraceContainer = null;
-export function showRuleTrace(labels) { /* removed debug overlay */ }
-
-// Link/file helpers
 export function handleLink(href, title, target) {
   const ctx = `User opened link: ${title || href}`;
   try { if (window.conversation && window.conversation.sendContextualUpdate) window.conversation.sendContextualUpdate(ctx); } catch (_) { }
@@ -125,7 +135,7 @@ export function handleLink(href, title, target) {
     try { window._action.play(); } catch (_) { }
   }
 }
-// Touch UI initializer
+
 export function initTouchUI(timeoutMs = 5000) {
   const isTouchDevice = ('ontouchstart' in window) ||
     (navigator.maxTouchPoints > 0) ||
@@ -140,7 +150,6 @@ export function initTouchUI(timeoutMs = 5000) {
   let hideTimeout = null;
 
   function showTouchUI() {
-    // Do not depend on local `connected` state; rely on CSS classes
     if (volumeCanvas && volumeCanvas.classList.contains('connected')) {
       volumeCanvas.classList.add('touch-visible');
     }

@@ -104,5 +104,4 @@ export default function sound(source) {
     return T;
 };
 
-// Also expose on window for any legacy callers
 try { if (typeof window !== 'undefined') window.sound = sound; } catch (_) { }

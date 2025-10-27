@@ -118,18 +118,18 @@
     padding: 20px 15px;
   }
 
-  /* Hide description and tools text on mobile */
+  
   .language-desc,
   .language-tools {
     display: none !important;
   }
 
-  /* Adjust spacing when descriptions are hidden */
+  
   .language-info h2 {
     margin: 0;
   }
 
-  /* Make flag smaller on mobile */
+  
   .language-card .fi {
     font-size: 48px;
     margin-bottom: 15px;
@@ -150,54 +150,54 @@ body {
   font-family: "Jost", Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* Centered Status Display */
+
 #statusDisplay {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 10000;
-    pointer-events: none;
-    display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  pointer-events: none;
+  display: none;
 }
 
 #statusDisplay.active {
-    display: block;
+  display: block;
 }
 
 #statusText {
-    color: white;
-    font-size: 18px;
-    font-weight: 400;
-    text-align: center;
-    white-space: nowrap;
-    opacity: 1;
-    transition: opacity 0.3s ease;
+  color: white;
+  font-size: 18px;
+  font-weight: 400;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.3s ease;
 }
 
-/* Loader progress bar (cache-bust via new id) */
+
 #statusLinear {
-    margin: 10px auto 0 auto;
-    width: 260px;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-    overflow: hidden;
-    opacity: 1;
-    transition: opacity 0.4s ease 0.15s;
+  margin: 10px auto 0 auto;
+  width: 260px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.4s ease 0.15s;
 }
 
 #statusLinearBar {
-    height: 100%;
-    width: 0%;
-    background: #5ce600;
-    border-radius: 4px;
-    transition: width 0.25s ease, opacity 0.4s ease;
+  height: 100%;
+  width: 0%;
+  background: #5ce600;
+  border-radius: 4px;
+  transition: width 0.25s ease, opacity 0.4s ease;
 }
 
-/* Fade-out state once loading completes */
+
 #statusLinear.is-done {
-    opacity: 0;
+  opacity: 0;
 }
 
 div#subtitle {
@@ -216,7 +216,7 @@ div#subtitle {
   user-select: none;
 }
 
-/* Preloader removed */
+
 
 @keyframes gradientFlow {
   0% {
@@ -232,7 +232,7 @@ div#subtitle {
   }
 }
 
-/* Text Input Window */
+
 #textInputWindow {
   display: none;
   position: fixed;
@@ -257,9 +257,9 @@ div#subtitle {
   background: #2a2a2a;
   padding: 6px 20px;
   cursor: move;
-  /* display: flex; */
-  /* justify-content: flex-start; */
-  /* align-items: center; */
+  
+  
+  
   user-select: none;
 }
 
@@ -364,7 +364,7 @@ div#subtitle {
   background: #444;
 }
 
-/* Notification System */
+
 .notification-container {
   position: fixed;
   bottom: 20px;
@@ -433,7 +433,7 @@ div#subtitle {
   text-overflow: ellipsis;
 }
 
-/* Debug Console */
+
 #debugConsole {
   display: none;
   position: fixed;
@@ -529,7 +529,7 @@ li.topic-message {
 
 #debugLog li.system-message {
   color: #999999;
-  /* background: rgba(153, 153, 153, 0.05); */
+  
 }
 
 .debug-content::-webkit-scrollbar {
@@ -549,7 +549,7 @@ li.topic-message {
   background: rgba(255, 255, 255, 0.3);
 }
 
-/* Category Indicator */
+
 #categoryIndicator {
   position: fixed;
   bottom: 20px;
@@ -575,7 +575,7 @@ li.topic-message {
   transform: translateY(0);
 }
 
-/* Call Control Buttons */
+
 #callControls {
   position: fixed;
   bottom: 32px;
@@ -607,7 +607,7 @@ body:hover #callControls.connected {
   opacity: 1 !important;
 }
 
-/* Touch-specific visibility for call controls */
+
 #callControls.touch-visible {
   opacity: 1 !important;
   pointer-events: auto !important;
@@ -654,7 +654,7 @@ body:hover #callControls.connected {
   pointer-events: none;
 }
 
-/* Canvas Styles */
+
 #canvas {
   display: block;
   position: fixed;
@@ -677,7 +677,7 @@ body:hover #callControls.connected {
   pointer-events: auto;
 }
 
-/* Volume Bar */
+
 #volumeCanvas {
   position: fixed;
   right: 20px;
@@ -704,12 +704,12 @@ body:hover #volumeCanvas.connected {
   opacity: 0.6;
 }
 
-/* Touch-specific visibility for volume bar */
+
 #volumeCanvas.touch-visible {
   opacity: 1 !important;
 }
 
-/* Disconnection Box */
+
 #disconnectionBox {
   position: fixed;
   bottom: 20px;
@@ -743,7 +743,7 @@ body:hover #volumeCanvas.connected {
   background: #247002;
 }
 
-/* Topic Display */
+
 #topicDisplay {
   position: fixed;
   top: 24px;
@@ -763,12 +763,12 @@ body:hover #topicDisplay.connected {
   opacity: 1;
 }
 
-/* Touch-specific visibility for topic display */
+
 #topicDisplay.touch-visible {
   opacity: 1 !important;
 }
 
-/* Top Right Controls */
+
 #topRightControls {
   position: fixed;
   top: 24px;
@@ -794,7 +794,7 @@ body:hover #topRightControls.connected {
   opacity: 1 !important;
 }
 
-/* Connection Quality (Signal Bars) */
+
 #connectionQuality {
   --signal-color: #00ff00;
   display: inline-flex;
@@ -802,8 +802,8 @@ body:hover #topRightControls.connected {
   height: 24px;
   padding: 2px 4px;
   border-radius: 4px;
-  /* background: rgba(0, 0, 0, 0.35); */
-  /* border: 1px solid rgba(255, 255, 255, 0.15); */
+  
+  
   cursor: default;
 }
 
@@ -850,24 +850,24 @@ body:hover #topRightControls.connected {
   --signal-color: #ff4d4d;
 }
 
-/* red */
+
 #connectionQuality.fair {
   --signal-color: #ffb84d;
 }
 
-/* orange */
+
 #connectionQuality.good {
   --signal-color: #e6ff4d;
 }
 
-/* yellow-green */
+
 #connectionQuality.strong {
   --signal-color: #00ff66;
 }
 
-/* green */
 
-/* Utility Buttons */
+
+
 .utility-btn {
   width: 32px;
   height: 32px;
@@ -895,7 +895,7 @@ body:hover #topRightControls.connected {
   opacity: 1;
 }
 
-/* Custom Language Selector */
+
 #customLanguageSelector {
   position: relative;
 }
@@ -1011,7 +1011,6 @@ body:hover #topRightControls.connected {
   opacity: 0.5;
 }
 
-/* Fullscreen Image Modal */
 .image-modal {
   display: none;
   position: fixed;
@@ -1081,4 +1080,116 @@ body:hover #topRightControls.connected {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.alertBox {
+  pointer-events: none;
+  user-select: none;
+  width: 300px;
+  height: 46px;
+  position: fixed;
+  overflow: hidden;
+  z-index: 999;
+  top: 32px;
+  left: calc(50vw - 150px);
+  opacity: 0;
+}
+
+.alertBox.active {
+  opacity: 1;
+}
+
+.alertBox:before {
+  display: block;
+  content: "";
+  width: 100%;
+  height: 100%;
+  animation: bgpulse 1s linear infinite;
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: linear-gradient(135deg, #4a4a00 0%, #3a3a00 100%);
+}
+
+.scrollText {
+  position: absolute;
+  white-space: nowrap;
+  font-family: 'Bebas Neue', Arial, sans-serif;
+  font-size: 30px;
+  line-height: 20px;
+  font-weight: 400;
+  color: #FFEB3B;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  animation: scroll 8s linear infinite;
+  padding: 16px 0;
+}
+
+@keyframes scroll {
+  0% {
+    transform: translateX(100%);
+  }
+
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes bgpulse {
+  0% {
+    opacity: .4;
+  }
+
+  50% {
+    opacity: 0.1;
+  }
+
+  100% {
+    opacity: .4;
+  }
+
+}
+
+.cornerTL {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid #FDFD12;
+  border-left: 2px solid #FDFD12;
+}
+
+.cornerTR {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid #FDFD12;
+  border-right: 2px solid #FDFD12;
+}
+
+.cornerBL {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-bottom: 2px solid #FDFD12;
+  border-left: 2px solid #FDFD12;
+}
+
+.cornerBR {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-bottom: 2px solid #FDFD12;
+  border-right: 2px solid #FDFD12;
+}
+
+.alertBox span {
+  opacity: 0.85;
 }
