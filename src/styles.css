@@ -118,18 +118,18 @@
     padding: 20px 15px;
   }
 
-  
+
   .language-desc,
   .language-tools {
     display: none !important;
   }
 
-  
+
   .language-info h2 {
     margin: 0;
   }
 
-  
+
   .language-card .fi {
     font-size: 48px;
     margin-bottom: 15px;
@@ -257,9 +257,9 @@ div#subtitle {
   background: #2a2a2a;
   padding: 6px 20px;
   cursor: move;
-  
-  
-  
+
+
+
   user-select: none;
 }
 
@@ -529,7 +529,7 @@ li.topic-message {
 
 #debugLog li.system-message {
   color: #999999;
-  
+
 }
 
 .debug-content::-webkit-scrollbar {
@@ -802,8 +802,8 @@ body:hover #topRightControls.connected {
   height: 24px;
   padding: 2px 4px;
   border-radius: 4px;
-  
-  
+
+
   cursor: default;
 }
 
@@ -1121,7 +1121,7 @@ body:hover #topRightControls.connected {
   color: #FFEB3B;
   text-transform: uppercase;
   letter-spacing: 1px;
-  animation: scroll 8s linear infinite;
+  animation: scroll 25s linear infinite;
   padding: 16px 0;
 }
 

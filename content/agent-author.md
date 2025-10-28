@@ -2,9 +2,6 @@
 
 This document contains instructions for XML-based output formatting for sub-agents and content generation.
 
-### Break Tags
-Insert pauses in speech where appropriate using `<break time="1.25s" />`.
-Pause durations can range from `0.25s` to `1.25s`, depending on conversational rhythm.
 
 ### Links Structure
 When providing multiple links, use this list format:
